@@ -1,0 +1,408 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>高速飞行器 - 终极写实爆燃版</title>
+    <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        html, body { width:100%; height:100%; overflow:hidden; background:#050508; }
+        canvas { display:block; }
+    </style>
+</head>
+<body>
+    <canvas id="renderCanvas"></canvas>
+    <script>
+        const canvas = document.getElementById('renderCanvas');
+        const ctx = canvas.getContext('2d');
+        let width = canvas.width = window.innerWidth;
+        let height = canvas.height = window.innerHeight;
+
+        window.addEventListener('resize', () => {
+            width = canvas.width = window.innerWidth;
+            height = canvas.height = window.innerHeight;
+        });
+
+        let frameCount = 0;
+        const center = { x: width * 0.42, y: height * 0.5 }; // 稍微右移，留出更长的火焰空间
+
+        function updateCenter() {
+            center.x = width * 0.42;
+            center.y = height * 0.5;
+        }
+
+        const backgroundStars = [];
+        const motionBlurStreaks = [];
+        const foregroundDebris = [];
+        const contrailParticles = [];
+        const flameParticles = []; // 火焰爆燃粒子
+
+        for (let i = 0; i < 150; i++) {
+            backgroundStars.push({
+                x: Math.random()*width, y: Math.random()*height,
+                size: Math.random()*1.5+0.5, speed: Math.random()*3+1,
+                alpha: Math.random()*0.7+0.3
+            });
+        }
+
+        for (let i = 0; i < 40; i++) {
+            motionBlurStreaks.push({
+                x: Math.random()*width, y: Math.random()*height,
+                length: Math.random()*400+200, speed: Math.random()*85+110,
+                width: Math.random()*2.5+0.5, alpha: Math.random()*0.45+0.15
+            });
+        }
+
+        for (let i = 0; i < 12; i++) {
+            foregroundDebris.push({
+                x: Math.random()*width + width, y: Math.random()*height,
+                radius: Math.random()*45+25, speed: Math.random()*130+170,
+                alpha: Math.random()*0.25+0.08
+            });
+        }
+
+        function createContrailParticle(x, y) {
+            return { x, y, vx: Math.random()*20 + 50, vy: (Math.random()-0.5)*4, radius: Math.random()*5 + 3, alpha: 0.6 };
+        }
+
+        function createFlameParticle(x, y) {
+            return {
+                x: x + (Math.random()-0.5)*20,
+                y: y + (Math.random()-0.5)*35,
+                vx: -Math.random()*25 - 35, // 向后狂飙
+                vy: (Math.random()-0.5)*14,
+                life: 35 + Math.random()*25,
+                size: 14 + Math.random()*18,
+                hue: Math.random()*30 + 12 // 狂暴粒子色相
+            };
+        }
+
+        function updateEffects() {
+            updateCenter();
+            frameCount++;
+
+            backgroundStars.forEach(star => {
+                star.x -= star.speed;
+                if (star.x < 0) { star.x = width; star.y = Math.random()*height; }
+            });
+
+            motionBlurStreaks.forEach(streak => {
+                streak.x -= streak.speed;
+                if (streak.x + streak.length < 0) { streak.x = width + Math.random()*300; streak.y = Math.random()*height; }
+            });
+
+            foregroundDebris.forEach(deb => {
+                deb.x -= deb.speed;
+                if (deb.x + deb.radius*2 < 0) { deb.x = width + Math.random()*500; deb.y = Math.random()*height; }
+            });
+
+            // 烟雾尾迹
+            if (frameCount % 2 === 0) {
+                contrailParticles.push(createContrailParticle(center.x - 140, center.y + 10));
+            }
+            for (let i = contrailParticles.length - 1; i >= 0; i--) {
+                let p = contrailParticles[i];
+                p.x -= p.vx; p.y += p.vy; p.radius += 0.7; p.alpha -= 0.008;
+                if (p.alpha <= 0) contrailParticles.splice(i, 1);
+            }
+
+            // 火焰爆发粒子（完美对齐写实版根部）
+            if (frameCount % 1 === 0) {
+                for (let i = 0; i < 6; i++) {
+                    flameParticles.push(createFlameParticle(center.x - 130, center.y + 10));
+                }
+            }
+            for (let i = flameParticles.length - 1; i >= 0; i--) {
+                let p = flameParticles[i];
+                p.x += p.vx; p.y += p.vy; p.vy += 0.3; p.life--; p.size *= 0.95;
+                if (p.life <= 0) flameParticles.splice(i, 1);
+            }
+        }
+
+        function drawOrganicBody() {
+            const cx = center.x;
+            const cy = center.y;
+            
+            // 引擎剧烈震颤动效
+            const shakeX = (Math.random() - 0.5) * 6;
+            const shakeY = (Math.random() - 0.5) * 4;
+
+            ctx.save();
+            ctx.translate(shakeX, shakeY);
+            ctx.rotate(Math.sin(frameCount * 0.08) * 0.013); // 自然气流摆动
+
+            // ==========================================
+            // 1. 睾丸部分（饱满体积感、阴影与皮肤褶皱）
+            // ==========================================
+            // 上/后侧睾丸
+            let testicleGrad1 = ctx.createRadialGradient(cx - 140, cy - 15, 5, cx - 135, cy - 15, 45);
+            testicleGrad1.addColorStop(0, '#f2beaa');
+            testicleGrad1.addColorStop(0.6, '#d69274');
+            testicleGrad1.addColorStop(1, '#82462e');
+            ctx.fillStyle = testicleGrad1;
+            ctx.beginPath();
+            ctx.ellipse(cx - 135, cy - 22, 44, 48, -0.2, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 下/前侧主睾丸（明显、垂感强）
+            let testicleGrad2 = ctx.createRadialGradient(cx - 125, cy + 30, 10, cx - 120, cy + 32, 55);
+            testicleGrad2.addColorStop(0, '#fcd2be');
+            testicleGrad2.addColorStop(0.5, '#db9676');
+            testicleGrad2.addColorStop(1, '#8a492f');
+            ctx.fillStyle = testicleGrad2;
+            ctx.beginPath();
+            ctx.ellipse(cx - 125, cy + 32, 49, 57, 0.25, 0, Math.PI * 2);
+            ctx.fill();
+
+            // 睾丸皮肤阴影褶皱纹理
+            ctx.strokeStyle = 'rgba(120, 60, 35, 0.38)';
+            ctx.lineWidth = 2.2;
+            for (let i = 0; i < 3; i++) {
+                ctx.beginPath();
+                ctx.arc(cx - 120 + i * 4, cy + 32, 41 - i * 6, 0.3, 2.2);
+                ctx.stroke();
+            }
+
+            // ==========================================
+            // 2. 阴茎主体（手工贝塞尔曲线，带挺拔上扬弧度）
+            // ==========================================
+            let shaftGrad = ctx.createLinearGradient(cx - 120, cy - 40, cx + 100, cy + 50);
+            shaftGrad.addColorStop(0, '#cc8462');
+            shaftGrad.addColorStop(0.25, '#ebb091');
+            shaftGrad.addColorStop(0.65, '#fcd4bd');
+            shaftGrad.addColorStop(1, '#c77f5c');
+
+            ctx.fillStyle = shaftGrad;
+            ctx.beginPath();
+            ctx.moveTo(cx - 100, cy - 35);
+            // 上边缘曲线：打造精细的勃起上扬形态
+            ctx.bezierCurveTo(cx - 30, cy - 52, cx + 40, cy - 28, cx + 100, cy - 32);
+            ctx.lineTo(cx + 96, cy + 28);
+            // 下边缘曲线：饱满浑厚
+            ctx.bezierCurveTo(cx + 40, cy + 24, cx - 20, cy + 54, cx - 95, cy + 38);
+            ctx.closePath();
+            ctx.fill();
+
+            // ==========================================
+            // 3. 写实分支血管系统（明暗交织）
+            // ==========================================
+            ctx.save();
+            ctx.strokeStyle = 'rgba(191, 80, 59, 0.65)';
+            ctx.lineWidth = 3.5;
+            ctx.lineCap = 'round';
+            ctx.shadowBlur = 1.5;
+            ctx.shadowColor = 'rgba(191, 80, 59, 0.4)';
+
+            // 背部主血管
+            ctx.beginPath();
+            ctx.moveTo(cx - 80, cy - 12);
+            ctx.bezierCurveTo(cx - 30, cy - 32, cx + 20, cy - 8, cx + 90, cy - 18);
+            ctx.stroke();
+
+            // 侧边分支
+            ctx.lineWidth = 1.8;
+            ctx.beginPath();
+            ctx.moveTo(cx - 15, cy - 21);
+            ctx.bezierCurveTo(cx + 10, cy - 36, cx + 40, cy - 34, cx + 65, cy - 26);
+            ctx.stroke();
+
+            // 底部次级血管
+            ctx.lineWidth = 2.5;
+            ctx.beginPath();
+            ctx.moveTo(cx - 70, cy + 18);
+            ctx.bezierCurveTo(cx - 15, cy + 34, cx + 35, cy + 12, cx + 85, cy + 16);
+            ctx.stroke();
+            ctx.restore();
+
+            // ==========================================
+            // 4. 冠状沟与龟头（写实蘑菇头结构与尿道口）
+            // ==========================================
+            // 冠状沟立体边缘
+            let coronaGrad = ctx.createLinearGradient(cx + 90, cy - 40, cx + 110, cy + 40);
+            coronaGrad.addColorStop(0, '#cf5840');
+            coronaGrad.addColorStop(0.5, '#eb836c');
+            coronaGrad.addColorStop(1, '#ad3d26');
+            ctx.fillStyle = coronaGrad;
+            ctx.beginPath();
+            ctx.moveTo(cx + 100, cy - 38);
+            ctx.bezierCurveTo(cx + 112, cy - 38, cx + 112, cy + 36, cx + 96, cy + 36);
+            ctx.bezierCurveTo(cx + 86, cy + 10, cx + 90, cy - 20, cx + 100, cy - 38);
+            ctx.fill();
+
+            // 龟头主体（顶级肉质感渐变）
+            let glansGrad = ctx.createRadialGradient(cx + 145, cy, 5, cx + 125, cy, 55);
+            glansGrad.addColorStop(0, '#ffbeaf');
+            glansGrad.addColorStop(0.2, '#f59884');
+            glansGrad.addColorStop(0.75, '#db654d');
+            glansGrad.addColorStop(1, '#9e3621');
+            ctx.fillStyle = glansGrad;
+            ctx.beginPath();
+            ctx.moveTo(cx + 102, cy - 35);
+            ctx.bezierCurveTo(cx + 135, cy - 40, cx + 172, cy - 16, cx + 172, cy + 1);
+            ctx.bezierCurveTo(cx + 172, cy + 18, cx + 132, cy + 38, cx + 98, cy + 33);
+            ctx.bezierCurveTo(cx + 106, cy + 10, cx + 110, cy - 15, cx + 102, cy - 35);
+            ctx.fill();
+
+            // 尿道口微红结构
+            ctx.strokeStyle = '#80210e';
+            ctx.lineWidth = 3.5;
+            ctx.lineCap = 'round';
+            ctx.beginPath();
+            ctx.moveTo(cx + 169, cy - 6);
+            ctx.lineTo(cx + 169, cy + 6);
+            ctx.stroke();
+
+            // ==========================================
+            // 5. 湿润高光层
+            // ==========================================
+            let massiveShine = ctx.createLinearGradient(cx - 40, cy - 30, cx + 130, cy - 20);
+            massiveShine.addColorStop(0, 'rgba(255,255,255,0.38)');
+            massiveShine.addColorStop(0.5, 'rgba(255,255,255,0.15)');
+            massiveShine.addColorStop(1, 'rgba(255,255,255,0)');
+            ctx.fillStyle = massiveShine;
+            ctx.beginPath();
+            ctx.moveTo(cx - 40, cy - 36);
+            ctx.bezierCurveTo(cx + 20, cy - 40, cx + 80, cy - 26, cx + 130, cy - 20);
+            ctx.lineTo(cx + 120, cy - 14);
+            ctx.bezierCurveTo(cx + 70, cy - 18, cx + 20, cy - 30, cx - 40, cy - 26);
+            ctx.closePath();
+            ctx.fill();
+
+            // 龟头顶部娇嫩高光
+            ctx.fillStyle = 'rgba(255, 255, 255, 0.45)';
+            ctx.beginPath();
+            ctx.ellipse(cx + 140, cy - 14, 18, 7, 0.18, 0, Math.PI * 2);
+            ctx.fill();
+
+            ctx.restore();
+        }
+
+        function drawRocketExhaust() {
+            const cx = center.x;
+            const cy = center.y;
+            // 完美对齐写实版的根部坐标 (cx - 130)
+            const baseX = cx - 130; 
+
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+
+            // 1. 最外层巨大闪烁外焰
+            let outer = ctx.createLinearGradient(baseX - 380, cy, baseX + 20, cy);
+            outer.addColorStop(0, 'rgba(255,40,0,0)');
+            outer.addColorStop(0.3, 'rgba(255,90,20,0.6)');
+            outer.addColorStop(0.7, 'rgba(255,180,40,0.4)');
+            outer.addColorStop(1, 'rgba(255,230,100,0)');
+            ctx.fillStyle = outer;
+            // 稍微上下抖动模拟热浪
+            let waveY = Math.sin(frameCount * 0.4) * 6;
+            ctx.fillRect(baseX - 420, cy - 95 + waveY, 450, 190 - waveY * 2);
+
+            // 2. 中层高能亮焰
+            let mid = ctx.createLinearGradient(baseX - 240, cy, baseX + 10, cy);
+            mid.addColorStop(0, 'rgba(255,180,40,0)');
+            mid.addColorStop(0.5, 'rgba(255,235,100,0.95)');
+            mid.addColorStop(1, 'rgba(255,140,20,0)');
+            ctx.fillStyle = mid;
+            ctx.fillRect(baseX - 260, cy - 60, 280, 120);
+
+            // 3. 核心超白热核（推力集中点）
+            let core = ctx.createLinearGradient(baseX - 140, cy, baseX, cy);
+            core.addColorStop(0, 'rgba(255,255,255,0)');
+            core.addColorStop(0.6, '#ffffff');
+            core.addColorStop(0.9, '#ffffcc');
+            core.addColorStop(1, 'rgba(255,200,100,0)');
+            ctx.fillStyle = core;
+            ctx.fillRect(baseX - 150, cy - 36, 160, 72);
+
+            ctx.restore();
+
+            // 4. 喷射粒子渲染（粒子随生命周期缩放并淡出）
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            flameParticles.forEach(p => {
+                let alpha = p.life / 60;
+                ctx.fillStyle = `hsla(${p.hue}, 100%, 80%, ${alpha})`;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+        function drawScene() {
+            ctx.fillStyle = '#050508';
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save();
+            let shakeX = (Math.random() - 0.5) * 6;
+            let shakeY = (Math.random() - 0.5) * 6;
+            ctx.translate(shakeX, shakeY);
+
+            // 星空
+            ctx.fillStyle = '#ffffff';
+            backgroundStars.forEach(star => {
+                ctx.globalAlpha = star.alpha;
+                ctx.fillRect(star.x, star.y, star.size, star.size);
+            });
+            ctx.globalAlpha = 1.0;
+
+            // 动态速度光流
+            motionBlurStreaks.forEach(streak => {
+                let grad = ctx.createLinearGradient(streak.x, streak.y, streak.x + streak.length, streak.y);
+                grad.addColorStop(0, 'rgba(255,255,255,0)');
+                grad.addColorStop(0.65, `rgba(255, 235, 200, ${streak.alpha})`);
+                grad.addColorStop(1, 'rgba(255,255,255,0)');
+                ctx.strokeStyle = grad;
+                ctx.lineWidth = streak.width;
+                ctx.beginPath();
+                ctx.moveTo(streak.x, streak.y);
+                ctx.lineTo(streak.x + streak.length, streak.y);
+                ctx.stroke();
+            });
+
+            // 远端烟雾尾迹
+            ctx.save();
+            ctx.globalCompositeOperation = 'screen';
+            contrailParticles.forEach(p => {
+                let grad = ctx.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.radius);
+                grad.addColorStop(0, `rgba(255, 245, 220, ${p.alpha})`);
+                grad.addColorStop(1, 'rgba(255, 160, 80, 0)');
+                ctx.fillStyle = grad;
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+
+            // 渲染爆燃尾焰与写实主体
+            drawRocketExhaust();
+            drawOrganicBody();
+            
+            ctx.restore();
+
+            // 前景震撼飞掠大滤镜（超音速虚化尘埃）
+            ctx.save();
+            ctx.filter = 'blur(28px)';
+            ctx.globalCompositeOperation = 'screen';
+            foregroundDebris.forEach(deb => {
+                let g = ctx.createRadialGradient(deb.x, deb.y, 0, deb.x, deb.y, deb.radius);
+                g.addColorStop(0, `rgba(255,240,210,${deb.alpha * 1.8})`);
+                g.addColorStop(1, 'rgba(0,0,0,0)');
+                ctx.fillStyle = g;
+                ctx.beginPath();
+                ctx.arc(deb.x, deb.y, deb.radius, 0, Math.PI * 2);
+                ctx.fill();
+            });
+            ctx.restore();
+        }
+
+        function engineLoop() {
+            updateEffects();
+            drawScene();
+            requestAnimationFrame(engineLoop);
+        }
+
+        engineLoop();
+    </script>
+</body>
+</html>
