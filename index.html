@@ -3,31 +3,46 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JBUFO - 狂暴回滚容器 v7.4 (空间折叠版)</title>
+    <title>JBUFO - 恶性实体容器 v7.0.1 (活跃粒子列表重构版)</title>
     <style>
         body {
             margin: 0; padding: 0; overflow: hidden;
-            background-color: #010103; color: #00ff00;
+            background-color: #020203; color: white;
             font-family: 'Courier New', monospace;
+            cursor: crosshair;
         }
-        canvas { display: block; position: absolute; top: 0; left: 0; z-index: 1; }
+        canvas { display: block; }
         #hud {
-            position: absolute; top: 20px; left: 20px; pointer-events: none;
-            font-size: 13px; line-height: 1.6; z-index: 10;
+            position: absolute; top: 20px; left: 20px;
+            pointer-events: none;
+            text-shadow: 0 0 5px rgba(0, 255, 0, 0.6);
+            color: #00ff00; font-size: 14px; line-height: 1.5; z-index: 10;
+            transition: color 0.1s, text-shadow 0.1s;
         }
-        #a11y-footer {
-            position: absolute; bottom: 15px; left: 20px;
-            font-size: 11px; color: #666666; z-index: 10; pointer-events: none;
+        .warning { color: #ff3333; text-shadow: 0 0 8px rgba(255, 50, 50, 0.8); font-weight: bold; }
+        .glitch { animation: glitch-anim 0.2s infinite linear alternate-reverse; }
+        @keyframes glitch-anim {
+            0% { transform: translate(0); }
+            20% { transform: translate(-2px, 1px); }
+            40% { transform: translate(2px, -1px); filter: hue-rotate(90deg); }
+            60% { transform: translate(-1px, 2px); }
+            80% { transform: translate(1px, -2px); filter: invert(1); }
+            100% { transform: translate(0); }
         }
-        .critical { color: #ff2222; text-shadow: 0 0 12px #ff0000; font-weight: bold; }
-        .overflow-alert { color: #ffaa00; text-shadow: 0 0 8px #ff5500; }
     </style>
 </head>
 <body>
 
+    <div id="hud">
+        <div id="fps">FPS: --</div>
+        <div id="status">SYS_STATUS: OPTICAL_SENSORS_ONLINE</div>
+        <div id="energyGauge">CORE_ENERGY: 100.0%</div>
+        <div id="velocity">TARGET_SPEED: MACH 0.00</div>
+        <div id="gforce">DYNAMIC_G: 1.00 G</div>
+        <div id="bp" class="warning" style="display:none;">WARNING: VENTRICULAR FIBRILLATION</div>
+    </div>
+
     <canvas id="gameCanvas"></canvas>
-    <div id="hud"></div>
-    <div id="a11y-footer">[C] 键: 切换光标 | 警告：实体已解除速度锁定，启用空间折叠力场限制</div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
@@ -35,74 +50,170 @@
         
         let width, height;
         let lastTime = 0, frames = 0, currentFps = 0;
-        let hideNativeCursor = false;
 
         function resize() { width = canvas.width = window.innerWidth; height = canvas.height = window.innerHeight; }
         window.addEventListener('resize', resize); resize();
 
-        // ========================================================
-        // 核心一：二进制线形内存池 (保留完整粒子系统)
-        // ========================================================
-        const MAX_PARTICLES = 2500; const STRIDE = 8;
-        const memoryBuffer = new ArrayBuffer(MAX_PARTICLES * STRIDE * 4);
-        const pArray = new Float32Array(memoryBuffer);
-        const freeList = new Int32Array(MAX_PARTICLES);
-        let freeTop = MAX_PARTICLES - 1;
-        for (let i = 0; i < MAX_PARTICLES; i++) freeList[i] = i;
-
-        let telemetry = { bufferOverflows: 0, evictionCount: 0 };
-
-        function spawnParticle(x, y, vx, vy, typeCode, maxLife) {
-            let pId = -1;
-            if (freeTop < 0) {
-                telemetry.bufferOverflows++;
-                pId = Math.floor(Math.random() * MAX_PARTICLES);
-                telemetry.evictionCount++;
-            } else {
-                pId = freeList[freeTop]; freeTop--;
-            }
-            if (pId < 0 || pId >= MAX_PARTICLES) return;
-
-            const idx = pId * STRIDE;
-            pArray[idx] = x; pArray[idx + 1] = y; pArray[idx + 2] = vx; pArray[idx + 3] = vy;
-            pArray[idx + 4] = maxLife; pArray[idx + 5] = maxLife; pArray[idx + 6] = typeCode;
-            
-            // Type: 1(Flame), 2(Smoke), 3(Toxic)
-            if (typeCode === 1) pArray[idx + 7] = Math.random() * 25 + 20;
-            else if (typeCode === 3) pArray[idx + 7] = Math.random() * 20 + 15;
-            else pArray[idx + 7] = Math.random() * 55 + 35; // 黑烟雾尺寸
-        }
-
-        // 高频输入接管
-        let pointer = { x: -1000, y: -1000, active: false, velocityX: 0, velocityY: 0 };
-        function handlePointerMove(e) {
+        let pointer = { x: -1000, y: -1000, active: false };
+        function handlePointer(e) {
             pointer.active = true;
-            const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
-            for (let ev of events) {
-                const nx = ev.clientX || (ev.touches && ev.touches[0] ? ev.touches[0].clientX : pointer.x);
-                const ny = ev.clientY || (ev.touches && ev.touches[0] ? ev.touches[0].clientY : pointer.y);
-                pointer.velocityX = nx - pointer.x; pointer.velocityY = ny - pointer.y;
-                pointer.x = nx; pointer.y = ny;
-            }
+            const ev = e.touches ? e.touches[0] : e;
+            pointer.x = ev.clientX; pointer.y = ev.clientY;
         }
-        window.addEventListener('mousemove', handlePointerMove);
-        window.addEventListener('touchmove', handlePointerMove, { passive: true });
-        const deactivatePointer = () => { pointer.active = false; };
-        window.addEventListener('mouseout', deactivatePointer); window.addEventListener('touchend', deactivatePointer);
+        window.addEventListener('mousemove', handlePointer);
+        window.addEventListener('touchmove', handlePointer, {passive: true});
+        window.addEventListener('mouseout', () => { pointer.active = false; });
+        window.addEventListener('touchend', () => { pointer.active = false; });
 
-        window.addEventListener('keydown', (e) => {
-            if (e.key.toLowerCase() === 'c') {
-                hideNativeCursor = !hideNativeCursor;
-                document.body.style.cursor = hideNativeCursor ? 'none' : 'crosshair';
+        const lexicons = {
+            status: {
+                'NORMAL': ["SYS_STATUS: NOMINAL", "SYS_STATUS: ORGANIC_FLUCTUATION", "SYS_STATUS: UNSTABLE_ORBIT"],
+                'FLAMEOUT': ["FATAL: CORE_FLAMEOUT", "CRITICAL: FREE_FALL_DETECTED", "ERR: PROPULSION_NULL"],
+                'REIGNITING': ["REBOOTING: SPARK_PLUG_SPUTTER", "CORE: AMNIOTIC_PUMP_PRIME", "WARNING: REIGNITION_STUTTER"],
+                'CLIMBING': ["OVERLOAD: EMERGENCY_THRUST", "SYS: VOLTAGE_SPIKE_990%", "FLESH: MAXIMUM_ACCELERATION"]
+            },
+            speed: ["TARGET_SPEED", "FLESH_VELOCITY", "PAIN_ACCELERATION", "FALL_VELOCITY"],
+            gforce: ["DYNAMIC_G", "TISSUE_STRESS", "TORTURE_COEFFICIENT", "GRAVITY_OVERRIDE"]
+        };
+
+        const ParticleAtlas = { canvas: document.createElement('canvas'), rects: {} };
+        function initParticleAtlas() {
+            const actx = ParticleAtlas.canvas.getContext('2d');
+            ParticleAtlas.canvas.width = 512; ParticleAtlas.canvas.height = 256;
+            
+            let flameGrad = actx.createRadialGradient(64, 64, 0, 64, 64, 64);
+            flameGrad.addColorStop(0, 'rgba(255, 245, 180, 1)'); flameGrad.addColorStop(0.2, 'rgba(255, 110, 0, 0.8)'); flameGrad.addColorStop(0.6, 'rgba(210, 30, 0, 0.2)'); flameGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            actx.fillStyle = flameGrad; actx.fillRect(0, 0, 128, 128); ParticleAtlas.rects['flame'] = { x: 0, y: 0, w: 128, h: 128 };
+            
+            // 【调整】：大幅调高烟雾粒子的灰度亮度与初始阿尔法值（从 20,18,22 升级为 135,130,140 工业死灰尘感）
+            let smokeGrad = actx.createRadialGradient(192, 64, 0, 192, 64, 64);
+            smokeGrad.addColorStop(0, 'rgba(135, 130, 140, 0.75)'); 
+            smokeGrad.addColorStop(0.4, 'rgba(75, 72, 80, 0.35)'); 
+            smokeGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            actx.fillStyle = smokeGrad; actx.fillRect(128, 0, 128, 128); ParticleAtlas.rects['smoke'] = { x: 128, y: 0, w: 128, h: 128 };
+
+            let toxicGrad = actx.createRadialGradient(64, 192, 0, 64, 192, 64);
+            toxicGrad.addColorStop(0, 'rgba(0, 255, 150, 1)'); toxicGrad.addColorStop(0.3, 'rgba(50, 180, 50, 0.6)'); toxicGrad.addColorStop(0.8, 'rgba(20, 60, 10, 0.1)'); toxicGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            actx.fillStyle = toxicGrad; actx.fillRect(0, 128, 128, 128); ParticleAtlas.rects['toxic'] = { x: 0, y: 128, w: 128, h: 128 };
+        }
+        initParticleAtlas();
+
+        
+class BetterParticlePool {
+    constructor(maxSize = 2500) {
+        this.pool = Array.from({length:maxSize}, (_,idx)=>({
+            x:0,y:0,vx:0,vy:0,size:0,maxInitalSize:0,
+            alpha:1,life:0,maxLife:0,active:false,type:'smoke',idx
+        }));
+        this.freeList = [];
+        this.activeList = [];
+        for(let i=maxSize-1;i>=0;i--) this.freeList.push(i);
+    }
+
+    spawn(x,y,vx,vy,type,maxLife=60){
+        if(this.freeList.length===0) return;
+
+        const idx=this.freeList.pop();
+        const p=this.pool[idx];
+
+        p.x=x; p.y=y; p.vx=vx; p.vy=vy;
+        p.type=type; p.maxLife=maxLife; p.life=maxLife;
+        p.alpha=1; p.active=true;
+
+        if(type==='flame') p.size=Math.random()*25+20;
+        else if(type==='toxic') p.size=Math.random()*20+15;
+        else if(type==='spark') p.size=Math.random()*1.5+0.5;
+        else p.size=Math.random()*60+45;
+
+        p.maxInitalSize=p.size;
+        this.activeList.push(idx);
+    }
+
+    updateAndDraw(ctx){
+        for(let a=this.activeList.length-1;a>=0;a--){
+            const idx=this.activeList[a];
+            const p=this.pool[idx];
+
+            p.x+=p.vx;
+            p.y+=p.vy;
+            p.life--;
+
+            if(p.type==='smoke'){
+                p.vx*=0.97;
+                p.vy*=0.98;
+                p.x+=Math.sin(p.life*0.08)*0.4;
             }
-        });
 
-        // ========================================================
-        // 核心二：保留高精度解剖结构渲染
-        // ========================================================
+            if(p.life<=0){
+                if(p.type==='flame' && Math.random()>0.35){
+                    p.type='smoke';
+                    p.life=p.maxLife=45+Math.random()*25;
+                    p.vx*=0.35;
+                    p.vy*=0.5;
+                    p.maxInitalSize*=1.6;
+                }else{
+                    p.active=false;
+                    this.activeList[a]=this.activeList[this.activeList.length-1];
+                    this.activeList.pop();
+                    this.freeList.push(idx);
+                    continue;
+                }
+            }
+
+            const lifeRatio=p.life/p.maxLife;
+            p.alpha=lifeRatio;
+
+            if(p.type==='spark'){
+                ctx.globalCompositeOperation='screen';
+                ctx.strokeStyle=`rgba(255,220,140,${p.alpha})`;
+                ctx.lineWidth=p.size;
+                ctx.beginPath();
+                ctx.moveTo(p.x,p.y);
+                ctx.lineTo(p.x-p.vx*1.6,p.y-p.vy*1.6);
+                ctx.stroke();
+                continue;
+            }
+
+            if(p.type==='smoke') p.size=p.maxInitalSize*(1+(1-lifeRatio)*2.8);
+            else if(p.type==='toxic') p.size=p.maxInitalSize*(0.3+lifeRatio*1.2);
+            else p.size=p.maxInitalSize*(lifeRatio*1.2);
+
+            const rect=ParticleAtlas.rects[p.type];
+
+            ctx.globalCompositeOperation=(p.type==='flame'||p.type==='toxic')
+                ? 'screen'
+                : 'source-over';
+
+            ctx.globalAlpha=(p.type==='smoke')
+                ? p.alpha*0.75
+                : p.alpha;
+
+            ctx.setTransform(
+                1,0,0,1,
+                p.x,p.y
+            );
+
+            if(p.type==='flame') ctx.rotate(p.life*0.05);
+
+            ctx.drawImage(
+                ParticleAtlas.canvas,
+                rect.x,rect.y,rect.w,rect.h,
+                -p.size/2,-p.size/2,p.size,p.size
+            );
+        }
+
+        ctx.setTransform(1,0,0,1,0,0);
+        ctx.globalAlpha=1;
+        ctx.globalCompositeOperation='source-over';
+    }
+}
+const particles = new BetterParticlePool(2500);
+
         const BODY_WIDTH = 250; const BODY_HEIGHT = 450;
         const offscreenBody = document.createElement('canvas'); const obCtx = offscreenBody.getContext('2d'); offscreenBody.width = BODY_WIDTH; offscreenBody.height = BODY_HEIGHT;
-        const offscreenSpecular = document.createElement('canvas'); const osCtx = offscreenSpecular.getContext('2d'); offscreenSpecular.width = BODY_WIDTH; offscreenSpecular.height = BODY_HEIGHT;
+        const offscreenSpecular = document.createElement('canvas'); const osCtx = offscreenSpecular.createElement ? offscreenSpecular.getContext('2d') : null; 
+        const realOsCtx = osCtx || offscreenSpecular.getContext('2d');
+        offscreenSpecular.width = BODY_WIDTH; offscreenSpecular.height = BODY_HEIGHT;
 
         function drawBodyPath(context) {
             context.beginPath(); context.arc(-35, 110, 42, 0, Math.PI * 2); context.arc(35, 110, 42, 0, Math.PI * 2);
@@ -110,6 +221,309 @@
             context.bezierCurveTo(-54, -135, -26, -168, 0, -168); context.bezierCurveTo(26, -168, 54, -135, 52, -101);
             context.lineTo(36, -95); context.bezierCurveTo(39, -40, 41, 30, 38, 90); context.closePath();
         }
+
+        function drawVein(ctx, startX, startY, controlPoints, width, color, blur) {
+            ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = blur; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            for (let i = 0; i < controlPoints.length; i += 3) { if (controlPoints[i+2]) ctx.bezierCurveTo(controlPoints[i].x, controlPoints[i].y, controlPoints[i+1].x, controlPoints[i+1].y, controlPoints[i+2].x, controlPoints[i+2].y); } ctx.stroke(); ctx.shadowBlur = 0; 
+        }
+
+        function preRenderOrganicAssets() {
+            obCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); obCtx.save(); obCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2);
+            const noiseCanvas = document.createElement('canvas'); noiseCanvas.width = 64; noiseCanvas.height = 64; const nCtx = noiseCanvas.getContext('2d'); const imgData = nCtx.createImageData(64, 64);
+            for(let i=0; i<imgData.data.length; i+=4) { const val = Math.random() * 255; imgData.data[i] = val; imgData.data[i+1] = val*0.62; imgData.data[i+2] = val*0.55; imgData.data[i+3] = 14; }
+            nCtx.putImageData(imgData, 0, 0); const skinPattern = obCtx.createPattern(noiseCanvas, 'repeat');
+            let testicleGrad = obCtx.createRadialGradient(-35, 105, 5, -35, 110, 45); testicleGrad.addColorStop(0, '#ebbaa9'); testicleGrad.addColorStop(0.6, '#b87c6c'); testicleGrad.addColorStop(1, '#421d17'); obCtx.fillStyle = testicleGrad; obCtx.beginPath(); obCtx.arc(-35, 110, 42, 0, Math.PI * 2); obCtx.fill();
+            let testicleGradR = obCtx.createRadialGradient(35, 105, 5, 35, 110, 45); testicleGradR.addColorStop(0, '#ebbaa9'); testicleGradR.addColorStop(0.6, '#b87c6c'); testicleGradR.addColorStop(1, '#421d17'); obCtx.fillStyle = testicleGradR; obCtx.beginPath(); obCtx.arc(35, 110, 42, 0, Math.PI * 2); obCtx.fill();
+            let shaftGrad = obCtx.createLinearGradient(-45, 0, 45, 0); shaftGrad.addColorStop(0, '#542a20'); shaftGrad.addColorStop(0.18, '#c78a78'); shaftGrad.addColorStop(0.5, '#f5ccbe'); shaftGrad.addColorStop(0.82, '#bd7e6d'); shaftGrad.addColorStop(1, '#401e17'); 
+            obCtx.fillStyle = shaftGrad; obCtx.beginPath(); obCtx.moveTo(-38, 90); obCtx.bezierCurveTo(-41, 30, -39, -40, -36, -95); obCtx.lineTo(36, -95); obCtx.bezierCurveTo(39, -40, 41, 30, 38, 90); obCtx.fill();
+            let glansGrad = obCtx.createRadialGradient(0, -135, 5, 0, -120, 60); glansGrad.addColorStop(0, '#ff9e9e'); glansGrad.addColorStop(0.3, '#df5f5f'); glansGrad.addColorStop(0.7, '#8d2b2b'); glansGrad.addColorStop(1, '#3b0a0a');
+            obCtx.fillStyle = glansGrad; obCtx.beginPath(); obCtx.moveTo(-36, -95); obCtx.lineTo(-52, -101); obCtx.bezierCurveTo(-54, -135, -26, -168, 0, -168); obCtx.bezierCurveTo(26, -168, 54, -135, 52, -101); obCtx.lineTo(36, -95); obCtx.bezierCurveTo(20, -88, -20, -88, -36, -95); obCtx.fill();
+            obCtx.strokeStyle = 'rgba(255, 190, 180, 0.45)'; obCtx.lineWidth = 2.5; obCtx.beginPath(); obCtx.moveTo(-50, -102); obCtx.bezierCurveTo(-20, -90, 20, -90, 50, -102); obCtx.stroke();
+            obCtx.beginPath(); obCtx.moveTo(0, -167); obCtx.lineTo(0, -148); obCtx.lineWidth = 3.5; obCtx.strokeStyle = '#520f0f'; obCtx.lineCap = 'round'; obCtx.stroke();
+            obCtx.beginPath(); obCtx.moveTo(-2, -164); obCtx.lineTo(-2, -151); obCtx.moveTo(2, -164); obCtx.lineTo(2, -151); i = 1.2; obCtx.lineWidth = 1.2; obCtx.strokeStyle = '#ffa6a6'; obCtx.stroke();
+            obCtx.save(); obCtx.globalCompositeOperation = 'source-atop'; obCtx.globalAlpha = 0.42;
+            drawVein(obCtx, -5, 120, [{x:-15, y:80}, {x:-25, y:20}, {x:-10, y:-40}, {x:5, y:-80}, {x:0, y:-115}, {x:-6, y:-142}], 6, '#3a2d59', 10);
+            drawVein(obCtx, 15, 115, [{x:20, y:60}, {x:10, y:0}, {x:25, y:-50}, {x:12, y:-95}, {x:16, y:-120}, {x:4, y:-138}], 5, '#2c2242', 8);
+            obCtx.globalAlpha = 0.68; drawVein(obCtx, 0, 110, [{x:-5, y:70}, {x:-18, y:10}, {x:-2, y:-30}, {x:8, y:-60}, {x:-4, y:-105}, {x:-12, y:-140}], 2.5, '#5c1b1b', 2); obCtx.restore(); 
+            obCtx.save(); obCtx.globalCompositeOperation = 'source-atop'; obCtx.fillStyle = skinPattern; obCtx.fillRect(-BODY_WIDTH / 2, -BODY_HEIGHT / 2, BODY_WIDTH, BODY_HEIGHT); obCtx.restore(); obCtx.restore();
+
+            realOsCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); realOsCtx.save(); realOsCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2); realOsCtx.fillStyle = '#000000'; drawBodyPath(realOsCtx); realOsCtx.fill(); realOsCtx.globalCompositeOperation = 'source-in'; realOsCtx.clearRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+            let specTesticleL = realOsCtx.createRadialGradient(-35, 140, 0, -35, 120, 40); specTesticleL.addColorStop(0, 'rgba(255, 245, 200, 0.9)'); specTesticleL.addColorStop(0.3, 'rgba(255, 150, 50, 0.5)'); specTesticleL.addColorStop(1, 'rgba(0, 0, 0, 0)'); realOsCtx.fillStyle = specTesticleL; realOsCtx.fillRect(-100, 80, 100, 100);
+            let specTesticleR = realOsCtx.createRadialGradient(35, 140, 0, 35, 120, 40); specTesticleR.addColorStop(0, 'rgba(255, 245, 200, 0.9)'); specTesticleR.addColorStop(0.3, 'rgba(255, 150, 50, 0.5)'); specTesticleR.addColorStop(1, 'rgba(0, 0, 0, 0)'); realOsCtx.fillStyle = specTesticleR; realOsCtx.fillRect(0, 80, 100, 100);
+            let specGlans = realOsCtx.createRadialGradient(0, -150, 2, 0, -140, 35); specGlans.addColorStop(0, 'rgba(255, 255, 255, 0.85)'); specGlans.addColorStop(0.4, 'rgba(255, 130, 130, 0.3)'); specGlans.addColorStop(1, 'rgba(0, 0, 0, 0)'); realOsCtx.fillStyle = specGlans; realOsCtx.fillRect(-60, -170, 120, 80);
+            let specShaft = realOsCtx.createLinearGradient(-40, 0, 40, 0); specShaft.addColorStop(0, 'rgba(0,0,0,0)'); specShaft.addColorStop(0.5, 'rgba(255, 255, 255, 0.55)'); specShaft.addColorStop(1, 'rgba(0,0,0,0)'); realOsCtx.fillStyle = specShaft; realOsCtx.fillRect(-50, -90, 100, 180); realOsCtx.restore();
+        }
+        preRenderOrganicAssets();
+
+        const entity = { 
+            x: window.innerWidth / 2, y: window.innerHeight - 250, 
+            vx: 0, vy: -3, angle: 0, baseSpeed: 2.4, gForce: 1.0, bloodPressure: 0, 
+            noiseOffset: Math.random() * 1000, panicTimer: 0, targetVx: 0, targetVy: -3, 
+            scaleX: 1, scaleY: 1, skewX: 0, skewVelocity: 0, lexicalLevel: 0,
+            state: 'NORMAL', energy: 100, reigniteTimer: 0, climbSpeed: 0
+        };
+        let cameraShake = 0;
+
+        function updatePhysics() {
+            entity.panicTimer--;
+            let threatLevel = 0; let angleToThreat = 0;
+            const pad = 120;
+
+            if (entity.state === 'NORMAL') {
+                let baseDrain = 0.15; 
+                if (pointer.active) {
+                    const dx = pointer.x - entity.x; const dy = pointer.y - entity.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 350) {
+                        threatLevel = 1 - (dist / 350); angleToThreat = Math.atan2(dy, dx); entity.panicTimer = 5;
+                        entity.targetVx = -Math.cos(angleToThreat) * (26 + threatLevel * 38); 
+                        entity.targetVy = -Math.sin(angleToThreat) * (20 + threatLevel * 28);
+                        entity.gForce = 8.5 + threatLevel * 7.5;
+                        baseDrain += threatLevel * 0.6;
+                    }
+                }
+                entity.energy -= baseDrain;
+
+                if (entity.energy <= 0) {
+                    entity.energy = 0; entity.state = 'FLAMEOUT';
+                    entity.targetVx = 0; entity.targetVy = 20; entity.panicTimer = 0;
+                } else {
+                    if (entity.panicTimer <= 0 && threatLevel === 0) {
+                        if (Math.random() > 0.6) {
+                            entity.targetVx = (Math.random() - 0.5) * 35; entity.targetVy = -Math.random() * 12 - 4;
+                            entity.panicTimer = Math.floor(Math.random() * 10) + 5; entity.gForce = 5.5 + Math.random() * 3.5;
+                        } else {
+                            entity.targetVx = Math.sin(Date.now() * 0.003 + entity.noiseOffset) * 4; entity.targetVy = -2.5;
+                            entity.panicTimer = Math.floor(Math.random() * 30) + 20; entity.gForce = 1.2 + Math.random() * 1.5;
+                        }
+                    }
+                    const lerpFactor = entity.gForce > 6 ? 0.4 : 0.1;
+                    entity.vx = entity.vx * (1 - lerpFactor) + entity.targetVx * lerpFactor;
+                    entity.vy = entity.vy * (1 - lerpFactor) + entity.targetVy * lerpFactor;
+                }
+            } 
+            
+            if (entity.state === 'FLAMEOUT') {
+                entity.targetVx = Math.sin(Date.now() * 0.05) * 2.5; 
+                entity.vx = entity.vx * 0.95 + entity.targetVx * 0.05;
+                entity.vy = entity.vy * 0.85 + entity.targetVy * 0.15; 
+                entity.gForce = 1.0 + Math.abs(entity.vy) * 0.3;
+
+                if (entity.y >= height - pad) {
+                    entity.y = height - pad; entity.vx = 0; entity.vy = 0;
+                    entity.targetVy = 0; entity.state = 'REIGNITING';
+                    entity.reigniteTimer = 90 + Math.random() * 40; entity.skewVelocity = (Math.random() - 0.5) * 1.8; 
+                }
+            } else if (entity.state === 'REIGNITING') {
+                entity.vx = Math.sin(Date.now() * 0.2) * (entity.reigniteTimer > 30 ? 1 : 4); 
+                entity.vy = 0; entity.gForce = 0.5 + Math.random() * 2;
+                entity.reigniteTimer--;
+
+                if (entity.reigniteTimer <= 0) {
+                    entity.state = 'CLIMBING'; entity.climbSpeed = -2; 
+                    entity.skewVelocity = (Math.random() - 0.5) * 1.5;
+                }
+            } else if (entity.state === 'CLIMBING') {
+                entity.climbSpeed = Math.max(-28, entity.climbSpeed - 0.6); 
+                entity.vy = entity.climbSpeed;
+                entity.vx = Math.sin(Date.now() * 0.04) * 6; 
+                entity.gForce = Math.abs(entity.vy) * 0.6;
+
+                if (entity.y <= height * 0.35) {
+                    entity.state = 'NORMAL'; entity.energy = 100;
+                    entity.vy *= 0.3; 
+                    entity.gForce = 1.0; 
+                }
+            }
+
+            entity.x += entity.vx; entity.y += entity.vy;
+            let bounced = false;
+
+            if (entity.state === 'NORMAL' || entity.state === 'CLIMBING') {
+                if (entity.x < pad) { entity.x = pad; entity.vx *= -1.2; entity.targetVx = Math.abs(entity.targetVx); bounced = true; }
+                else if (entity.x > width - pad) { entity.x = width - pad; entity.vx *= -1.2; entity.targetVx = -Math.abs(entity.targetVx); bounced = true; }
+                if (entity.state === 'NORMAL') {
+                    if (entity.y < pad) { entity.y = pad; entity.vy *= -1.2; entity.targetVy = Math.abs(entity.targetVy); bounced = true; }
+                    else if (entity.y > height - pad) { entity.y = height - pad; entity.vy *= -1.2; entity.targetVy = -Math.abs(entity.targetVy); bounced = true; }
+                }
+            } else {
+                if (entity.x < pad) { entity.x = pad; entity.vx *= -0.5; }
+                else if (entity.x > width - pad) { entity.x = width - pad; entity.vx *= -0.5; }
+            }
+
+            if (bounced && entity.state === 'NORMAL') { entity.gForce += 6.5; entity.panicTimer = 15; }
+
+            let targetSkew = entity.vx * 0.015;
+            if (entity.state === 'FLAMEOUT') targetSkew = entity.vx * 0.08; 
+            if (entity.state === 'CLIMBING') targetSkew += Math.sin(Date.now() * 0.1) * 0.2; 
+
+            let stiffness = entity.state === 'FLAMEOUT' ? 0.05 : 0.14; 
+            let damping = entity.state === 'FLAMEOUT' ? 0.88 : 0.75;
+            
+            let force = (targetSkew - entity.skewX) * stiffness;
+            entity.skewVelocity += force; entity.skewVelocity *= damping; entity.skewX += entity.skewVelocity;
+            entity.skewX = Math.max(-1.4, Math.min(1.4, entity.skewX));
+
+            let sharpPulse = 0;
+            if (entity.state === 'NORMAL' || entity.state === 'CLIMBING') {
+                const heartRate = Date.now() * 0.006 * (1 + entity.gForce * 0.15);
+                sharpPulse = Math.pow(Math.abs(Math.sin(heartRate)), 8);
+                entity.bloodPressure = Math.min(1, entity.gForce / 12) + (sharpPulse * 0.4);
+                entity.scaleX = 1 + (sharpPulse * 0.09 * (1 + entity.gForce * 0.2));
+                entity.scaleY = 1 - (sharpPulse * 0.04 * (1 + entity.gForce * 0.2));
+            } else if (entity.state === 'FLAMEOUT') {
+                entity.bloodPressure *= 0.92; entity.scaleX = 0.92 + Math.sin(Date.now() * 0.01) * 0.02; entity.scaleY = 1.08;
+            } else if (entity.state === 'REIGNITING') {
+                sharpPulse = Math.random() > 0.88 ? 0.6 : 0; entity.bloodPressure = sharpPulse * 0.8;
+                entity.scaleX = 1.35 + (Math.sin(Date.now() * 0.1) * 0.05); entity.scaleY = 0.65;
+            }
+            
+            entity.angle = entity.skewX;
+
+            const cosA = Math.cos(entity.angle), sinA = Math.sin(entity.angle);
+            const engineX1 = entity.x + (-35 * cosA - 120 * sinA), engineY1 = entity.y + (-35 * sinA + 120 * cosA);
+            const engineX2 = entity.x + (35 * cosA - 120 * sinA), engineY2 = entity.y + (35 * sinA + 120 * cosA);
+            const parasiteX = entity.x + (0 * cosA - 110 * sinA), parasiteY = entity.y + (0 * sinA + 110 * cosA);
+
+            if (entity.state === 'NORMAL') {
+                const isOverload = entity.gForce > 6;
+                for (let i = 0; i < (isOverload ? 4 : 2); i++) {
+                    particles.spawn(engineX1 + (Math.random()-0.5)*15, engineY1, (Math.random()-0.5)*3 - sinA*5, Math.random()*6+6 + cosA*3, 'flame', 30);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*15, engineY2, (Math.random()-0.5)*3 - sinA*5, Math.random()*6+6 + cosA*3, 'flame', 30);
+                }
+                
+                if (Math.random() > (isOverload ? 0.25 : 0.75)) {
+                    particles.spawn(engineX1 + (Math.random()-0.5)*10, engineY1 + 10, (Math.random()-0.5)*16 - sinA*8, Math.random()*15+12 + cosA*5, 'spark', 15);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*10, engineY2 + 10, (Math.random()-0.5)*16 - sinA*8, Math.random()*15+12 + cosA*5, 'spark', 15);
+                }
+
+                if (Math.random() > 0.85) {
+                    particles.spawn(engineX1, engineY1 + 12, (Math.random()-0.5)*4 - sinA*2, Math.random()*3+3 + cosA*2, 'smoke', 45);
+                    particles.spawn(engineX2, engineY2 + 12, (Math.random()-0.5)*4 - sinA*2, Math.random()*3+3 + cosA*2, 'smoke', 45);
+                }
+                if (entity.gForce > 5.0) {
+                    let sprayAngle = -Math.PI/2 - entity.angle; if (threatLevel > 0) sprayAngle = angleToThreat; 
+                    for(let j=0; j<4; j++) particles.spawn(parasiteX, parasiteY, Math.cos(sprayAngle + (Math.random()-0.5)*0.8) * (8 + Math.random()*6), Math.sin(sprayAngle + (Math.random()-0.5)*0.8) * (8 + Math.random()*6), 'toxic', 45);
+                }
+            } else if (entity.state === 'FLAMEOUT') {
+                if (Math.random() > 0.4) { // 稍微增加熄火烟雾喷射率
+                    particles.spawn(engineX1, engineY1, (Math.random()-0.5)*3, -entity.vy*0.2 + Math.random()*3, 'smoke', 75);
+                    particles.spawn(engineX2, engineY2, (Math.random()-0.5)*3, -entity.vy*0.2 + Math.random()*3, 'smoke', 75);
+                }
+            } else if (entity.state === 'REIGNITING') {
+                if (Math.random() > 0.72) {
+                    cameraShake = 4;
+                    particles.spawn(engineX1 + (Math.random()-0.5)*20, engineY1, (Math.random()-0.5)*8, Math.random()*4-2, 'flame', 15);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*20, engineY2, (Math.random()-0.5)*8, Math.random()*4-2, 'flame', 15);
+                    particles.spawn(parasiteX, parasiteY, (Math.random()-0.5)*12, -Math.random()*8, 'toxic', 30);
+                }
+                if (Math.random() > 0.25) { // 增加复燃挣扎时的烟气阻碍感
+                    particles.spawn(entity.x + (Math.random()-0.5)*60, entity.y + 110, (Math.random()-0.5)*5, -Math.random()*4, 'smoke', 65);
+                }
+            } else if (entity.state === 'CLIMBING') {
+                for (let i = 0; i < 9; i++) {
+                    particles.spawn(engineX1 + (Math.random()-0.5)*25, engineY1 + i*3, (Math.random()-0.5)*8 - sinA*4, Math.random()*15+20, 'flame', 45);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*25, engineY2 + i*3, (Math.random()-0.5)*8 - sinA*4, Math.random()*15+20, 'flame', 45);
+                    
+                    if (i % 3 === 0) {
+                        particles.spawn(engineX1 + (Math.random()-0.5)*20, engineY1, (Math.random()-0.5)*18 - sinA*10, Math.random()*26+16 + cosA*10, 'spark', 22);
+                        particles.spawn(engineX2 + (Math.random()-0.5)*20, engineY2, (Math.random()-0.5)*18 - sinA*10, Math.random()*26+16 + cosA*10, 'spark', 22);
+                    }
+                }
+                for(let k=0; k<2; k++) {
+                    particles.spawn(engineX1, engineY1 + 15, (Math.random()-0.5)*15, Math.random()*12+8, 'smoke', 80);
+                    particles.spawn(engineX2, engineY2 + 15, (Math.random()-0.5)*15, Math.random()*12+8, 'smoke', 80);
+                }
+            }
+
+            if (entity.state === 'CLIMBING') cameraShake = 12 + Math.random() * 8;
+            else if (entity.state === 'FLAMEOUT') cameraShake = 0.5;
+            else cameraShake = entity.gForce > 6 ? (5 + Math.random() * 8) : 1.5;
+
+            if (entity.state === 'FLAMEOUT') entity.lexicalLevel = 1;
+            else if (entity.state === 'REIGNITING') entity.lexicalLevel = 3;
+            else if (entity.state === 'CLIMBING') entity.lexicalLevel = 2;
+            else entity.lexicalLevel = entity.gForce < 4 ? 0 : (entity.gForce < 8 ? 1 : 2);
+        }
+
+        function updateHUD() {
+            const lvl = entity.lexicalLevel; const state = entity.state; const hudElem = document.getElementById('hud');
+            if (state === 'FLAMEOUT' || state === 'REIGNITING') { hudElem.style.color = '#ff1111'; hudElem.style.textShadow = '0 0 12px #ff0000'; hudElem.classList.add('glitch'); } 
+            else if (state === 'CLIMBING') { hudElem.style.color = '#ffaa00'; hudElem.style.textShadow = '0 0 15px #ff5500'; hudElem.classList.add('glitch'); }
+            else { hudElem.style.color = '#00ff00'; hudElem.style.textShadow = '0 0 5px rgba(0, 255, 0, 0.6)'; hudElem.classList.remove('glitch'); }
+            
+            document.getElementById('fps').innerText = state !== 'NORMAL' ? `THOUGHT_RATE: ${currentFps} ERR_STBL` : `FPS: ${currentFps}`;
+            
+            const stateTexts = lexicons.status[state];
+            document.getElementById('status').innerText = stateTexts[Math.floor(Date.now()/400) % stateTexts.length];
+            document.getElementById('energyGauge').innerText = `CORE_ENERGY: ${Math.max(0, entity.energy).toFixed(1)}%`;
+            document.getElementById('velocity').innerText = `${lexicons.speed[lvl]}: ${(entity.baseSpeed + Math.abs(entity.vx)*0.1 + Math.abs(entity.vy)*0.2).toFixed(2)}`;
+            document.getElementById('gforce').innerText = `${lexicons.gforce[lvl]}: ${entity.gForce.toFixed(2)}`;
+            
+            const warnElem = document.getElementById('bp'); 
+            if (state === 'FLAMEOUT') { warnElem.style.display = 'block'; warnElem.innerText = "CRITICAL: ENERGY_VOID_FALLBACK"; }
+            else if (state === 'REIGNITING') { warnElem.style.display = 'block'; warnElem.innerText = "FATAL: CARDIAC_ARREST_PRIME"; }
+            else if (state === 'CLIMBING') { warnElem.style.display = 'block'; warnElem.innerText = "OVERLOAD: EXCESSIVE_BIOMASS_BURN"; }
+            else { warnElem.style.display = entity.gForce > 6 ? 'block' : 'none'; warnElem.innerText = "WARNING: VASCULAR PRESSURE CRITICAL"; }
+        }
+
+        function drawLoop(timestamp) {
+            frames++; if (timestamp - lastTime >= 100) { if (timestamp - lastTime >= 1000) { currentFps = frames * 10; frames = 0; lastTime = timestamp; } updateHUD(); }
+            updatePhysics();
+
+            ctx.globalCompositeOperation = 'source-over';
+            let clearAlpha = entity.state === 'CLIMBING' ? 0.12 : (entity.state === 'REIGNITING' ? 0.35 : 0.22);
+            ctx.fillStyle = `rgba(2, 2, 3, ${clearAlpha})`; ctx.fillRect(0, 0, width, height);
+
+            ctx.save(); ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
+            particles.updateAndDraw(ctx);
+
+            ctx.save(); ctx.translate(entity.x, entity.y); ctx.rotate(entity.angle); ctx.scale(entity.scaleX, entity.scaleY); ctx.transform(1, entity.skewX, 0, 1, 0, 0); 
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.drawImage(offscreenBody, -BODY_WIDTH / 2, -BODY_HEIGHT / 2);
+
+            if (entity.bloodPressure > 0.05) {
+                ctx.save(); ctx.globalCompositeOperation = 'source-atop'; 
+                let bpGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, 160); 
+                let red = entity.state === 'CLIMBING' ? 255 : 240;
+                bpGrad.addColorStop(0, `rgba(${red}, 20, 20, ${entity.bloodPressure})`); bpGrad.addColorStop(1, 'rgba(90, 0, 0, 0)');
+                ctx.fillStyle = bpGrad; ctx.fillRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+                ctx.globalCompositeOperation = 'color-dodge'; ctx.fillRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+                ctx.restore();
+            }
+
+            ctx.save(); ctx.globalCompositeOperation = 'screen'; 
+            ctx.globalAlpha = entity.state === 'FLAMEOUT' ? 0.2 : (0.4 + Math.random() * 0.5);
+            ctx.drawImage(offscreenSpecular, -BODY_WIDTH / 2, -BODY_HEIGHT / 2); ctx.restore();
+
+            ctx.save();
+            let mouthPulse = 0;
+            if (entity.state === 'NORMAL' || entity.state === 'CLIMBING') {
+                mouthPulse = Math.sin(Date.now() * 0.02) * (4 + entity.bloodPressure * 7);
+            } else if (entity.state === 'REIGNITING') {
+                mouthPulse = Math.random() > 0.85 ? 10 : -3; 
+            }
+            ctx.translate(0, 110);
+            
+            ctx.fillStyle = entity.state === 'FLAMEOUT' ? '#140c0f' : '#2d121c'; ctx.beginPath(); 
+            ctx.ellipse(0, 0, Math.max(0.1, 24 + mouthPulse*0.5), Math.max(0.1, 14 - mouthPulse), 0, 0, Math.PI * 2); 
+            ctx.fill();
+            
+            ctx.fillStyle = '#0f0207'; ctx.beginPath(); 
+            ctx.ellipse(0, 0, Math.max(0.1, 14 + mouthPulse * 0.3), Math.max(0.1, 8 - mouthPulse * 0.6), 0, 0, Math.PI * 2); 
+            ctx.fill();
+            
+            ctx.strokeStyle = entity.state === 'CLIMBING' ? '#ffaa00' : (entity.state === 'FLAMEOUT' ? '#40151c' : '#ff3366'); 
+            ctx.lineWidth = 2 + entity.bloodPressure * 4; ctx.stroke();
+            ctx.restore();
+            
+            ctx.restore(); ctx.restore(); requestAnimationFrame(drawLoop);
+        }
+        requestAnimationFrame(drawLoop);
+    </script>
+</body>
+</html>
 
         function preRenderOrganicAssets() {
             obCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); obCtx.save(); obCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2);
