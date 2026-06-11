@@ -3,41 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JBUFO - 荒诞超现实生物飞行体引擎 v4</title>
+    <title>JBUFO - 底层注入内存容器 v7.0</title>
     <style>
         body {
-            margin: 0;
-            padding: 0;
-            overflow: hidden;
-            background-color: #050508;
-            color: white;
+            margin: 0; padding: 0; overflow: hidden;
+            background-color: #010103; color: white;
             font-family: 'Courier New', monospace;
+            cursor: none; /* 彻底抹杀原生指针，由实体力场接管视觉 */
         }
-        canvas { display: block; }
+        canvas { display: block; position: absolute; top:0; left:0; }
         #hud {
             position: absolute; top: 20px; left: 20px;
             pointer-events: none;
-            text-shadow: 0 0 5px rgba(0, 255, 0, 0.6);
-            color: #00ff00; font-size: 14px; line-height: 1.5; z-index: 10;
+            color: #00ff00; font-size: 13px; line-height: 1.6; z-index: 10;
         }
-        .warning { color: #ff3333; text-shadow: 0 0 8px rgba(255, 50, 50, 0.8); font-weight: bold; display: none; }
+        .critical { color: #ff2222; text-shadow: 0 0 12px #ff0000; font-weight: bold; }
     </style>
 </head>
 <body>
 
-    <div id="hud">
-        <div id="fps">FPS: --</div>
-        <div id="status">SYS_STATUS: OPTICAL_SENSORS_ONLINE</div>
-        <div id="velocity">TARGET_SPEED: MACH 0.00</div>
-        <div id="gforce">DYNAMIC_G: 1.00 G</div>
-        <div id="bp" class="warning">WARNING: VASCULAR PRESSURE CRITICAL</div>
-    </div>
-
     <canvas id="gameCanvas"></canvas>
+    <div id="hud"></div>
 
     <script>
         const canvas = document.getElementById('gameCanvas');
-        const ctx = canvas.getContext('2d');
+        const ctx = canvas.getContext('2d', { alpha: false, desynchronized: true }); // 激活低延迟脱步渲染模式
         
         let width, height;
         let lastTime = 0, frames = 0, currentFps = 0;
@@ -50,66 +40,324 @@
         resize();
 
         // ========================================================
-        // 1. 高性能粒子雪碧图集与对象池系统
+        // 核心突破一：二进制线形内存粒子引擎 (C-Style Struct Array)
+        // 每个粒子占用 8 个 Float32 槽位 (32 字节对齐):
+        // [0:x, 1:y, 2:vx, 3:vy, 4:life, 5:maxLife, 6:typeCode(1:flame,2:smoke,3:toxic), 7:size]
         // ========================================================
-        const ParticleAtlas = { canvas: document.createElement('canvas'), rects: {} };
-        function initParticleAtlas() {
-            const actx = ParticleAtlas.canvas.getContext('2d');
-            ParticleAtlas.canvas.width = 512; ParticleAtlas.canvas.height = 256;
-            
-            let flameGrad = actx.createRadialGradient(64, 64, 0, 64, 64, 64);
-            flameGrad.addColorStop(0, 'rgba(255, 235, 150, 1)');
-            flameGrad.addColorStop(0.2, 'rgba(255, 110, 0, 0.8)');
-            flameGrad.addColorStop(0.6, 'rgba(210, 30, 0, 0.2)');
-            flameGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            actx.fillStyle = flameGrad; actx.fillRect(0, 0, 128, 128);
-            ParticleAtlas.rects['flame'] = { x: 0, y: 0, w: 128, h: 128 };
-            
-            let smokeGrad = actx.createRadialGradient(192, 64, 0, 192, 64, 64);
-            smokeGrad.addColorStop(0, 'rgba(85, 80, 80, 0.35)');
-            smokeGrad.addColorStop(0.5, 'rgba(45, 45, 48, 0.15)');
-            smokeGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
-            actx.fillStyle = smokeGrad; actx.fillRect(128, 0, 128, 128);
-            ParticleAtlas.rects['smoke'] = { x: 128, y: 0, w: 128, h: 128 };
-        }
-        initParticleAtlas();
+        const MAX_PARTICLES = 2500;
+        const STRIDE = 8;
+        const memoryBuffer = new ArrayBuffer(MAX_PARTICLES * STRIDE * 4);
+        const pArray = new Float32Array(memoryBuffer);
+        let activeParticleCount = 0;
 
-        class BetterParticlePool {
-            constructor(maxSize = 600) {
-                this.pool = Array.from({ length: maxSize }, () => ({
-                    x: 0, y: 0, vx: 0, vy: 0, size: 0, maxInitalSize: 0, alpha: 1, life: 0, maxLife: 0, active: false, type: 'smoke'
-                }));
-            }
-            spawn(x, y, vx, vy, type, maxLife = 60) {
-                const p = this.pool.find(item => !item.active);
-                if (!p) return; 
-                p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.type = type; p.maxLife = maxLife; p.life = maxLife; p.alpha = 1; p.active = true;
-                p.size = type === 'flame' ? Math.random() * 25 + 20 : Math.random() * 50 + 30;
-                p.maxInitalSize = p.size;
-            }
-            updateAndDraw(ctx) {
-                ctx.globalCompositeOperation = 'screen'; 
-                for (let p of this.pool) {
-                    if (!p.active) continue;
-                    p.x += p.vx; p.y += p.vy; p.life--;
-                    const lifeRatio = p.life / p.maxLife; p.alpha = lifeRatio;
-                    p.size = p.type === 'smoke' ? p.maxInitalSize * (1 + (1 - lifeRatio) * 1.8) : p.maxInitalSize * (lifeRatio * 1.1);
-                    if (p.life <= 0) { p.active = false; continue; }
-                    
-                    const rect = ParticleAtlas.rects[p.type];
-                    ctx.save();
-                    ctx.globalAlpha = p.type === 'smoke' ? p.alpha * 0.4 : p.alpha;
-                    ctx.translate(p.x, p.y);
-                    ctx.drawImage(ParticleAtlas.canvas, rect.x, rect.y, rect.w, rect.h, -p.size/2, -p.size/2, p.size, p.size);
-                    ctx.restore();
+        function spawnParticle(x, y, vx, vy, typeCode, maxLife) {
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                if (pArray[idx + 4] <= 0) { // life <= 0 说明空闲
+                    pArray[idx] = x; pArray[idx + 1] = y;
+                    pArray[idx + 2] = vx; pArray[idx + 3] = vy;
+                    pArray[idx + 4] = maxLife; pArray[idx + 5] = maxLife;
+                    pArray[idx + 6] = typeCode;
+                    pArray[idx + 7] = typeCode === 1 ? Math.random() * 25 + 20 : (typeCode === 3 ? Math.random() * 20 + 15 : Math.random() * 50 + 30);
+                    return;
                 }
-                ctx.globalCompositeOperation = 'source-over';
             }
         }
-        const particles = new BetterParticlePool(600);
 
         // ========================================================
-        // 2. 离屏渲染架构 (基础肉体层 + 新增高光反射层)
+        // 核心突破二：高频触控微量重采样 (Coalesced Hardware Input)
+        // ========================================================
+        let pointer = { x: -1000, y: -1000, active: false, velocityX: 0, velocityY: 0 };
+        
+        function handlePointerMove(e) {
+            pointer.active = true;
+            // 如果硬件层支持合成高频事件（如高刷移动端触控通道），直接榨干它
+            const events = e.getCoalescedEvents ? e.getCoalescedEvents() : [e];
+            for (let ev of events) {
+                const nx = ev.clientX || (ev.touches && ev.touches[0] ? ev.touches[0].clientX : pointer.x);
+                const ny = ev.clientY || (ev.touches && ev.touches[0] ? ev.touches[0].clientY : pointer.y);
+                pointer.velocityX = nx - pointer.x;
+                pointer.velocityY = ny - pointer.y;
+                pointer.x = nx;
+                pointer.y = ny;
+            }
+        }
+        window.addEventListener('mousemove', handlePointerMove);
+        window.addEventListener('touchmove', handlePointerMove, { passive: true });
+        const deactivatePointer = () => { pointer.active = false; };
+        window.addEventListener('mouseout', deactivatePointer);
+        window.addEventListener('touchend', deactivatePointer);
+
+        // ========================================================
+        // 核心突破三：Unicode 位翻转与坏死坏码算法
+        // ========================================================
+        function bitFlipScramble(text, entropyLevel) {
+            if (entropyLevel <= 0) return text;
+            let result = "";
+            for (let i = 0; i < text.length; i++) {
+                let code = text.charCodeAt(i);
+                if (Math.random() < entropyLevel * 0.35) {
+                    // 对字符编码进行异或位翻转，并限制在不可预测的Unicode恶性字符区间
+                    code = code ^ (1 << Math.floor(Math.random() * 6));
+                    if(Math.random() < 0.2) code = 0x4e00 + Math.floor(Math.random() * 500); // 随机降级为未知冷门字符
+                }
+                result += String.fromCharCode(code);
+            }
+            // 高熵状态下追加恶性肉块增生字符（Combining Diacritical Marks）
+            if (entropyLevel > 0.6) {
+                const zalgo = ["\u033c", "\u0315", "\u0358", "\u031d", "\u0309", "\u033f"];
+                result += zalgo[Math.floor(Math.random() * zalgo.length)];
+            }
+            return result;
+        }
+
+        // ========================================================
+        // 离屏精细解剖资产预渲染（延续v6.1黄金比例）
+        // ========================================================
+        const BODY_WIDTH = 250; const BODY_HEIGHT = 450;
+        const offscreenBody = document.createElement('canvas'); const obCtx = offscreenBody.getContext('2d'); offscreenBody.width = BODY_WIDTH; offscreenBody.height = BODY_HEIGHT;
+        const offscreenSpecular = document.createElement('canvas'); const osCtx = offscreenSpecular.getContext('2d'); offscreenSpecular.width = BODY_WIDTH; offscreenSpecular.height = BODY_HEIGHT;
+
+        function drawBodyPath(context) {
+            context.beginPath(); context.arc(-35, 110, 42, 0, Math.PI * 2); context.arc(35, 110, 42, 0, Math.PI * 2);
+            context.moveTo(-38, 90); context.bezierCurveTo(-41, 30, -39, -40, -36, -95); context.lineTo(-52, -101);
+            context.bezierCurveTo(-54, -135, -26, -168, 0, -168); context.bezierCurveTo(26, -168, 54, -135, 52, -101);
+            context.lineTo(36, -95); context.bezierCurveTo(39, -40, 41, 30, 38, 90); context.closePath();
+        }
+
+        function preRenderOrganicAssets() {
+            obCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); obCtx.save(); obCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2);
+            let testicleGrad = obCtx.createRadialGradient(-35, 105, 5, -35, 110, 45); testicleGrad.addColorStop(0, '#ebbaa9'); testicleGrad.addColorStop(0.6, '#b87c6c'); testicleGrad.addColorStop(1, '#421d17'); obCtx.fillStyle = testicleGrad; obCtx.beginPath(); obCtx.arc(-35, 110, 42, 0, Math.PI * 2); obCtx.fill();
+            let testicleGradR = obCtx.createRadialGradient(35, 105, 5, 35, 110, 45); testicleGradR.addColorStop(0, '#ebbaa9'); testicleGradR.addColorStop(0.6, '#b87c6c'); testicleGradR.addColorStop(1, '#421d17'); obCtx.fillStyle = testicleGradR; obCtx.beginPath(); obCtx.arc(35, 110, 42, 0, Math.PI * 2); obCtx.fill();
+            let shaftGrad = obCtx.createLinearGradient(-45, 0, 45, 0); shaftGrad.addColorStop(0, '#542a20'); shaftGrad.addColorStop(0.18, '#c78a78'); shaftGrad.addColorStop(0.5, '#f5ccbe'); shaftGrad.addColorStop(0.82, '#bd7e6d'); shaftGrad.addColorStop(1, '#401e17'); obCtx.fillStyle = shaftGrad; obCtx.beginPath(); obCtx.moveTo(-38, 90); obCtx.bezierCurveTo(-41, 30, -39, -40, -36, -95); obCtx.lineTo(36, -95); obCtx.bezierCurveTo(39, -40, 41, 30, 38, 90); obCtx.fill();
+            let glansGrad = obCtx.createRadialGradient(0, -135, 5, 0, -120, 60); glansGrad.addColorStop(0, '#ff9e9e'); glansGrad.addColorStop(0.3, '#df5f5f'); glansGrad.addColorStop(0.7, '#8d2b2b'); glansGrad.addColorStop(1, '#3b0a0a'); obCtx.fillStyle = glansGrad; obCtx.beginPath(); obCtx.moveTo(-36, -95); obCtx.lineTo(-52, -101); obCtx.bezierCurveTo(-54, -135, -26, -168, 0, -168); obCtx.bezierCurveTo(26, -168, 54, -135, 52, -101); obCtx.lineTo(36, -95); obCtx.bezierCurveTo(20, -88, -20, -88, -36, -95); obCtx.fill();
+            obCtx.strokeStyle = 'rgba(255, 190, 180, 0.4)'; obCtx.lineWidth = 2; obCtx.beginPath(); obCtx.moveTo(-50, -102); obCtx.bezierCurveTo(-20, -90, 20, -90, 50, -102); obCtx.stroke();
+            obCtx.beginPath(); obCtx.moveTo(0, -167); obCtx.lineTo(0, -148); obCtx.lineWidth = 3; obCtx.strokeStyle = '#520f0f'; obCtx.lineCap = 'round'; obCtx.stroke();
+            obCtx.restore();
+            osCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); osCtx.save(); osCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2); osCtx.fillStyle = '#000000'; drawBodyPath(osCtx); osCtx.fill(); osCtx.globalCompositeOperation = 'source-in';
+            let specGlans = osCtx.createRadialGradient(0, -150, 2, 0, -140, 35); specGlans.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); specGlans.addColorStop(0.4, 'rgba(255, 130, 130, 0.2)'); specGlans.addColorStop(1, 'rgba(0, 0, 0, 0)'); osCtx.fillStyle = specGlans; osCtx.fillRect(-60, -170, 120, 80);
+            let specShaft = osCtx.createLinearGradient(-40, 0, 40, 0); specShaft.addColorStop(0, 'rgba(0,0,0,0)'); specShaft.addColorStop(0.5, 'rgba(255, 255, 255, 0.5)'); specShaft.addColorStop(1, 'rgba(0,0,0,0)'); osCtx.fillStyle = specShaft; osCtx.fillRect(-50, -90, 100, 180);
+            osCtx.restore();
+        }
+        preRenderOrganicAssets();
+
+        // 实体系统状态参数
+        const entity = { x: window.innerWidth / 2, y: window.innerHeight - 180, vx: 0, vy: -3, angle: 0, baseSpeed: 2.4, gForce: 1.0, bloodPressure: 0, noiseOffset: Math.random() * 1000, panicTimer: 0, targetVx: 0, targetVy: -3, scaleX: 1, scaleY: 1, skewX: 0, entropy: 0 };
+        let cameraShake = 0;
+
+        function updatePhysics() {
+            entity.panicTimer--;
+            let threatLevel = 0;
+            let angleToThreat = 0;
+
+            if (pointer.active) {
+                const dx = pointer.x - entity.x; const dy = pointer.y - entity.y;
+                const dist = Math.sqrt(dx * dx + dy * dy);
+                if (dist < 400) { // 扩大底层的威胁感知野
+                    threatLevel = 1 - (dist / 400);
+                    angleToThreat = Math.atan2(dy, dx);
+                    entity.panicTimer = 8;
+                    // 高频重采样加速反馈
+                    entity.targetVx = -Math.cos(angleToThreat) * (25 + threatLevel * 40) + pointer.velocityX * 0.3;
+                    entity.targetVy = -Math.sin(angleToThreat) * (20 + threatLevel * 25) + pointer.velocityY * 0.3;
+                    entity.gForce = 1.0 + (Math.sqrt(entity.targetVx*entity.targetVx + entity.targetVy*entity.targetVy) * 0.35);
+                }
+            }
+
+            if (entity.panicTimer <= 0 && threatLevel === 0) {
+                if (Math.random() > 0.7) {
+                    entity.targetVx = (Math.random() - 0.5) * 40; entity.targetVy = -Math.random() * 15 - 5;
+                    entity.panicTimer = Math.floor(Math.random() * 8) + 4;
+                    entity.gForce = 4.0 + Math.random() * 5.0;
+                } else {
+                    entity.targetVx = Math.sin(Date.now() * 0.004 + entity.noiseOffset) * 6; entity.targetVy = -3;
+                    entity.gForce = 1.0 + Math.random() * 1.2;
+                }
+            }
+
+            const lerpFactor = entity.gForce > 6 ? 0.45 : 0.12;
+            entity.vx = entity.vx * (1 - lerpFactor) + entity.targetVx * lerpFactor;
+            entity.vy = entity.vy * (1 - lerpFactor) + entity.targetVy * lerpFactor;
+            entity.x += entity.vx; entity.y += entity.vy;
+            
+            entity.bloodPressure = Math.min(1, entity.gForce / 15);
+            entity.entropy = Math.max(0, (entity.gForce - 3) / 12); // 计算系统的混乱熵值系数
+            
+            const breatheTime = Date.now() * 0.005;
+            entity.skewX = entity.vx * 0.018; 
+            entity.scaleX = (1 + Math.sin(breatheTime) * 0.04) * (1 - Math.abs(entity.vx) * 0.015);
+            entity.scaleY = (1 + Math.cos(breatheTime) * 0.03) * (1 + Math.abs(entity.vy) * 0.018);
+            entity.angle = (entity.vx * 0.018) + (entity.gForce > 7 ? (Math.random() - 0.5) * 0.3 : 0);
+
+            // 粒子系统推进喷射坐标映射
+            const cosA = Math.cos(entity.angle), sinA = Math.sin(entity.angle);
+            const engineX1 = entity.x + (-35 * cosA - 120 * sinA), engineY1 = entity.y + (-35 * sinA + 120 * cosA);
+            const engineX2 = entity.x + (35 * cosA - 120 * sinA), engineY2 = entity.y + (35 * sinA + 120 * cosA);
+            const parasiteX = entity.x + (0 * cosA - 110 * sinA), parasiteY = entity.y + (0 * sinA + 110 * cosA);
+
+            // 注入线形内存的高吞吐量推进焰
+            const spawnCount = entity.gForce > 7 ? 6 : 2;
+            for (let i = 0; i < spawnCount; i++) {
+                spawnParticle(engineX1 + (Math.random()-0.5)*12, engineY1, (Math.random()-0.5)*4 - sinA*6, Math.random()*8+6 + cosA*4, 1, 25);
+                spawnParticle(engineX2 + (Math.random()-0.5)*12, engineY2, (Math.random()-0.5)*4 - sinA*6, Math.random()*8+6 + cosA*4, 1, 25);
+                if(Math.random() > 0.4) {
+                    spawnParticle(engineX1, engineY1, (Math.random()-0.5)*8, Math.random()*4, 2, 40);
+                    spawnParticle(engineX2, engineY2, (Math.random()-0.5)*8, Math.random()*4, 2, 40);
+                }
+            }
+
+            // 二进制毒素喷射反击
+            if (entity.gForce > 4.5) {
+                let sprayAngle = -Math.PI/2 - entity.angle;
+                if (threatLevel > 0) sprayAngle = angleToThreat; 
+                const toxicCount = Math.floor(4 + threatLevel * 6);
+                for(let j=0; j<toxicCount; j++) {
+                    const scatter = (Math.random() - 0.5) * 0.6;
+                    const shootSpeed = 10 + threatLevel * 15 + Math.random() * 6;
+                    spawnParticle(parasiteX, parasiteY, Math.cos(sprayAngle + scatter) * shootSpeed, Math.sin(sprayAngle + scatter) * shootSpeed, 3, 50);
+                }
+            }
+
+            if (entity.x < -BODY_WIDTH) entity.x = width + BODY_WIDTH; if (entity.x > width + BODY_WIDTH) entity.x = -BODY_WIDTH; if (entity.y < -BODY_HEIGHT) entity.y = height + BODY_HEIGHT;
+            cameraShake = entity.gForce > 7 ? (6 + Math.random() * 10) : 1.2;
+        }
+
+        // 刷新 HUD 并进行内存突变解构
+        function updateHUD() {
+            const e = entity.entropy;
+            const hudElem = document.getElementById('hud');
+            
+            if (e > 0.4) {
+                hudElem.style.color = `rgb(${Math.floor(150 + e*105)}, ${Math.floor(255 - e*200)}, 0)`;
+                hudElem.style.transform = `translate(${(Math.random()-0.5)*e*6}px, ${(Math.random()-0.5)*e*6}px)`;
+            } else {
+                hudElem.style.color = '#00ff00';
+                hudElem.style.transform = 'none';
+            }
+
+            // 位翻转混淆处理工业文本
+            const rawFps = `MEM_CLOCK_RATE: ${currentFps} HZ`;
+            const rawStatus = entity.gForce > 8 ? "SYS_STATUS: DATA_FIELD_COLLAPSE" : "SYS_STATUS: CORE_ISOLATION_ACTIVE";
+            const rawVelocity = `FLESH_VELOCITY: MACH ${(entity.baseSpeed + Math.abs(entity.vx)*0.15 + Math.abs(entity.vy)*0.25).toFixed(2)}`;
+            const rawGForce = `DYNAMIC_ENTROPY: ${(entity.gForce * 9.8).toFixed(2)} M/S²`;
+            
+            let htmlStr = `
+                <div>${bitFlipScramble(rawFps, e)}</div>
+                <div>${bitFlipScramble(rawStatus, e)}</div>
+                <div>${bitFlipScramble(rawVelocity, e)}</div>
+                <div style="font-weight:bold;">${bitFlipScramble(rawGForce, e)}</div>
+            `;
+
+            if (entity.gForce > 5.5) {
+                const rawWarn = "CRITICAL: CELLULAR STRUCTURE RUPTURE DETECTED";
+                htmlStr += `<div class="critical">${bitFlipScramble(rawWarn, e * 1.5)}</div>`;
+            }
+
+            hudElem.innerHTML = htmlStr;
+        }
+
+        // 线性遍历优化过的二进制内存并完成全画布复合混色渲染
+        function drawParticles(ctx) {
+            ctx.save();
+            // 预缓存渲染常数
+            const pi2 = Math.PI * 2;
+            for (let i = 0; i < MAX_PARTICLES; i++) {
+                const idx = i * STRIDE;
+                let life = pArray[idx + 4];
+                if (life <= 0) continue;
+
+                // 物理状态更新
+                pArray[idx + 4] = --life; // 寿命衰减
+                pArray[idx] += pArray[idx + 2]; // x += vx
+                pArray[idx + 1] += pArray[idx + 3]; // y += vy
+
+                const maxLife = pArray[idx + 5];
+                const typeCode = pArray[idx + 6];
+                let size = pArray[idx + 7];
+                const ratio = life / maxLife;
+
+                ctx.beginPath();
+                if (typeCode === 1) { // Flame
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = `rgba(255, ${Math.floor(100 + ratio * 155)}, ${Math.floor(ratio * 50)}, ${ratio})`;
+                    size = size * ratio;
+                    ctx.arc(pArray[idx], pArray[idx + 1], size * 0.5, 0, pi2);
+                } else if (typeCode === 3) { // Toxic
+                    ctx.globalCompositeOperation = 'screen';
+                    ctx.fillStyle = `rgba(${Math.floor(50 - ratio*50)}, ${Math.floor(200 + ratio * 55)}, ${Math.floor(100 + ratio * 50)}, ${ratio * 0.9})`;
+                    size = size * (0.4 + ratio * 0.8);
+                    ctx.arc(pArray[idx], pArray[idx + 1], size * 0.5, 0, pi2);
+                } else { // Smoke
+                    ctx.globalCompositeOperation = 'source-over';
+                    ctx.fillStyle = `rgba(40, 38, 42, ${ratio * 0.22})`;
+                    size = size * (1 + (1 - ratio) * 1.5);
+                    ctx.arc(pArray[idx], pArray[idx + 1], size * 0.5, 0, pi2);
+                }
+                ctx.fill();
+            }
+            ctx.restore();
+        }
+
+        function drawLoop(timestamp) {
+            frames++; 
+            if (timestamp - lastTime >= 70) { // 极速异步UI刷新
+                if (timestamp - lastTime >= 1000) { currentFps = frames; frames = 0; lastTime = timestamp; }
+                updateHUD();
+            }
+
+            updatePhysics();
+
+            // 晕涂残影累积缓冲，根据系统混乱度调整环境粘度
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.fillStyle = `rgba(1, 1, 2, ${entity.gForce > 9 ? 0.12 : 0.22})`; 
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save(); 
+            // 整个视口随硬件G力发生低频剧烈震颤
+            ctx.translate((Math.random() - 0.5) * cameraShake, (Math.random() - 0.5) * cameraShake);
+            
+            // 执行高效二进制内存粒子绘制
+            drawParticles(ctx);
+
+            // 定位生物实体矩阵
+            ctx.save(); 
+            ctx.translate(entity.x, entity.y); ctx.rotate(entity.angle); ctx.scale(entity.scaleX, entity.scaleY); ctx.transform(1, entity.skewX, 0, 1, 0, 0); 
+
+            // 基础解剖形体
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.drawImage(offscreenBody, -BODY_WIDTH / 2, -BODY_HEIGHT / 2);
+
+            // 毛细血管充血补偿
+            if (entity.bloodPressure > 0.05) {
+                ctx.save(); ctx.globalCompositeOperation = 'source-atop'; 
+                let bpGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, 160); 
+                bpGrad.addColorStop(0, `rgba(255, 10, 10, ${entity.bloodPressure * 0.9})`); 
+                bpGrad.addColorStop(1, 'rgba(90, 0, 0, 0)');
+                ctx.fillStyle = bpGrad; ctx.fillRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+                ctx.globalCompositeOperation = 'color-dodge'; ctx.fillRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+                ctx.restore();
+            }
+
+            // 湿润高光融合层
+            ctx.save(); ctx.globalCompositeOperation = 'screen'; ctx.globalAlpha = 0.45 + Math.random() * 0.45;
+            ctx.drawImage(offscreenSpecular, -BODY_WIDTH / 2, -BODY_HEIGHT / 2); ctx.restore();
+
+            // 动力中枢的括约肌排泄口器
+            ctx.save();
+            const mouthPulse = Math.sin(Date.now() * 0.024) * (4 + entity.bloodPressure * 8); ctx.translate(0, 110);
+            ctx.fillStyle = '#260f17'; ctx.beginPath(); ctx.ellipse(0, 0, 24 + mouthPulse*0.5, 14 - mouthPulse, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.fillStyle = '#0a0105'; ctx.beginPath(); ctx.ellipse(0, 0, 14 + mouthPulse * 0.3, 8 - mouthPulse * 0.6, 0, 0, Math.PI * 2); ctx.fill();
+            ctx.strokeStyle = entity.gForce > 6.5 ? '#00ffa0' : '#ff2255'; ctx.lineWidth = 2 + entity.bloodPressure * 3; ctx.stroke();
+            ctx.restore();
+            
+            ctx.restore(); ctx.restore();
+            requestAnimationFrame(drawLoop);
+        }
+
+        requestAnimationFrame(drawLoop);
+    </script>
+</body>
+</html>
         // ========================================================
         const BODY_WIDTH = 250;
         const BODY_HEIGHT = 450;
