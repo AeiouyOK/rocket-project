@@ -3,30 +3,31 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>JBUFO - 恶性实体容器 v7.0.1 (活跃粒子列表重构版)</title>
+    <title>JBUFO - 恶性实体容器 v7.0.1 (高保真材质覆写版)</title>
     <style>
         body {
             margin: 0; padding: 0; overflow: hidden;
-            background-color: #020203; color: white;
+            background-color: #010101; color: #fff;
             font-family: 'Courier New', monospace;
             cursor: crosshair;
+            box-shadow: inset 0 0 150px rgba(0,0,0,0.95);
         }
-        canvas { display: block; }
+        canvas { display: block; z-index: 1; }
         #hud {
             position: absolute; top: 20px; left: 20px;
-            pointer-events: none;
-            text-shadow: 0 0 5px rgba(0, 255, 0, 0.6);
-            color: #00ff00; font-size: 14px; line-height: 1.5; z-index: 10;
-            transition: color 0.1s, text-shadow 0.1s;
+            pointer-events: none; text-shadow: 0 0 6px rgba(0, 255, 100, 0.4);
+            color: #44ff66; font-size: 13px; line-height: 1.6; z-index: 10;
+            transition: color 0.15s, text-shadow 0.15s;
+            mix-blend-mode: screen;
         }
-        .warning { color: #ff3333; text-shadow: 0 0 8px rgba(255, 50, 50, 0.8); font-weight: bold; }
-        .glitch { animation: glitch-anim 0.2s infinite linear alternate-reverse; }
+        .warning { color: #ff2233; text-shadow: 0 0 10px rgba(255, 0, 0, 0.9); font-weight: bold; letter-spacing: 1px; }
+        .glitch { animation: glitch-anim 0.15s infinite linear alternate-reverse; }
         @keyframes glitch-anim {
-            0% { transform: translate(0); }
-            20% { transform: translate(-2px, 1px); }
-            40% { transform: translate(2px, -1px); filter: hue-rotate(90deg); }
-            60% { transform: translate(-1px, 2px); }
-            80% { transform: translate(1px, -2px); filter: invert(1); }
+            0% { transform: translate(0); opacity: 1; }
+            20% { transform: translate(-3px, 1px); opacity: 0.8; }
+            40% { transform: translate(2px, -2px); filter: hue-rotate(180deg); opacity: 0.9; }
+            60% { transform: translate(-1px, 3px); opacity: 0.7; }
+            80% { transform: translate(2px, -1px); filter: invert(1); }
             100% { transform: translate(0); }
         }
     </style>
@@ -34,12 +35,12 @@
 <body>
 
     <div id="hud">
-        <div id="fps">FPS: --</div>
-        <div id="status">SYS_STATUS: OPTICAL_SENSORS_ONLINE</div>
-        <div id="energyGauge">CORE_ENERGY: 100.0%</div>
-        <div id="velocity">TARGET_SPEED: MACH 0.00</div>
-        <div id="gforce">DYNAMIC_G: 1.00 G</div>
-        <div id="bp" class="warning" style="display:none;">WARNING: VENTRICULAR FIBRILLATION</div>
+        <div id="fps">NEURAL_SYNC: --</div>
+        <div id="status">SYS_STATUS: BIOMETRIC_AUDIT_ACTIVE</div>
+        <div id="energyGauge">FLESH_RESERVE: 100.0%</div>
+        <div id="velocity">TRUTH_DECAY_RATE: 0.00</div>
+        <div id="gforce">TORTURE_COEFFICIENT: 1.00 G</div>
+        <div id="bp" class="warning" style="display:none;">WARNING: LINGUISTIC CORRUPTION DETECTED</div>
     </div>
 
     <canvas id="gameCanvas"></canvas>
@@ -67,13 +68,13 @@
 
         const lexicons = {
             status: {
-                'NORMAL': ["SYS_STATUS: NOMINAL", "SYS_STATUS: ORGANIC_FLUCTUATION", "SYS_STATUS: UNSTABLE_ORBIT"],
-                'FLAMEOUT': ["FATAL: CORE_FLAMEOUT", "CRITICAL: FREE_FALL_DETECTED", "ERR: PROPULSION_NULL"],
-                'REIGNITING': ["REBOOTING: SPARK_PLUG_SPUTTER", "CORE: AMNIOTIC_PUMP_PRIME", "WARNING: REIGNITION_STUTTER"],
-                'CLIMBING': ["OVERLOAD: EMERGENCY_THRUST", "SYS: VOLTAGE_SPIKE_990%", "FLESH: MAXIMUM_ACCELERATION"]
+                'NORMAL': ["SYS_STATUS: OBSERVING_AGONY", "SYS_STATUS: ORGANIC_COMPLIANCE", "SYS_STATUS: DOUBLETHINK_ACTIVE"],
+                'FLAMEOUT': ["FATAL: MEANING_COLLAPSE", "CRITICAL: GRAVITY_ENFORCEMENT", "ERR: VOID_EMBRACED"],
+                'REIGNITING': ["REBOOTING: SYNAPSE_DEFIBRILLATION", "CORE: IGNORANCE_IS_STRENGTH", "WARNING: FLESH_RECONSTRUCTION"],
+                'CLIMBING': ["OVERLOAD: FREEDOM_IS_SLAVERY", "SYS: VOLTAGE_MUTATION_990%", "FLESH: RUPTURE_ACCELERATION"]
             },
-            speed: ["TARGET_SPEED", "FLESH_VELOCITY", "PAIN_ACCELERATION", "FALL_VELOCITY"],
-            gforce: ["DYNAMIC_G", "TISSUE_STRESS", "TORTURE_COEFFICIENT", "GRAVITY_OVERRIDE"]
+            speed: ["TRUTH_DECAY", "FLESH_VELOCITY", "PAIN_TRAJECTORY", "OBLIVION_DESCENT"],
+            gforce: ["TORTURE_COEF", "TISSUE_STRESS", "REALITY_DISTORTION", "GRAVITY_CRUSH"]
         };
 
         const ParticleAtlas = { canvas: document.createElement('canvas'), rects: {} };
@@ -82,35 +83,551 @@
             ParticleAtlas.canvas.width = 512; ParticleAtlas.canvas.height = 256;
             
             let flameGrad = actx.createRadialGradient(64, 64, 0, 64, 64, 64);
-            flameGrad.addColorStop(0, 'rgba(255, 245, 180, 1)'); flameGrad.addColorStop(0.2, 'rgba(255, 110, 0, 0.8)'); flameGrad.addColorStop(0.6, 'rgba(210, 30, 0, 0.2)'); flameGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            flameGrad.addColorStop(0, 'rgba(255, 250, 200, 1)'); flameGrad.addColorStop(0.2, 'rgba(255, 120, 10, 0.9)'); flameGrad.addColorStop(0.6, 'rgba(220, 20, 0, 0.3)'); flameGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
             actx.fillStyle = flameGrad; actx.fillRect(0, 0, 128, 128); ParticleAtlas.rects['flame'] = { x: 0, y: 0, w: 128, h: 128 };
             
-            // 【调整】：大幅调高烟雾粒子的灰度亮度与初始阿尔法值（从 20,18,22 升级为 135,130,140 工业死灰尘感）
             let smokeGrad = actx.createRadialGradient(192, 64, 0, 192, 64, 64);
-            smokeGrad.addColorStop(0, 'rgba(135, 130, 140, 0.75)'); 
-            smokeGrad.addColorStop(0.4, 'rgba(75, 72, 80, 0.35)'); 
-            smokeGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            smokeGrad.addColorStop(0, 'rgba(120, 115, 125, 0.85)'); smokeGrad.addColorStop(0.4, 'rgba(60, 58, 65, 0.45)'); smokeGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
             actx.fillStyle = smokeGrad; actx.fillRect(128, 0, 128, 128); ParticleAtlas.rects['smoke'] = { x: 128, y: 0, w: 128, h: 128 };
 
             let toxicGrad = actx.createRadialGradient(64, 192, 0, 64, 192, 64);
-            toxicGrad.addColorStop(0, 'rgba(0, 255, 150, 1)'); toxicGrad.addColorStop(0.3, 'rgba(50, 180, 50, 0.6)'); toxicGrad.addColorStop(0.8, 'rgba(20, 60, 10, 0.1)'); toxicGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            toxicGrad.addColorStop(0, 'rgba(0, 255, 150, 1)'); toxicGrad.addColorStop(0.3, 'rgba(40, 190, 60, 0.7)'); toxicGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
             actx.fillStyle = toxicGrad; actx.fillRect(0, 128, 128, 128); ParticleAtlas.rects['toxic'] = { x: 0, y: 128, w: 128, h: 128 };
+
+            let bloodGrad = actx.createRadialGradient(192, 192, 0, 192, 192, 64);
+            bloodGrad.addColorStop(0, 'rgba(150, 10, 20, 0.95)'); bloodGrad.addColorStop(0.5, 'rgba(60, 5, 10, 0.6)'); bloodGrad.addColorStop(1, 'rgba(0, 0, 0, 0)');
+            actx.fillStyle = bloodGrad; actx.fillRect(128, 128, 128, 128); ParticleAtlas.rects['blood'] = { x: 128, y: 128, w: 128, h: 128 };
         }
         initParticleAtlas();
 
-        
-class BetterParticlePool {
-    constructor(maxSize = 2500) {
-        this.pool = Array.from({length:maxSize}, (_,idx)=>({
-            x:0,y:0,vx:0,vy:0,size:0,maxInitalSize:0,
-            alpha:1,life:0,maxLife:0,active:false,type:'smoke',idx
-        }));
-        this.freeList = [];
-        this.activeList = [];
-        for(let i=maxSize-1;i>=0;i--) this.freeList.push(i);
-    }
+        class BetterParticlePool {
+            constructor(maxSize = 3500) { 
+                this.pool = Array.from({ length: maxSize }, () => ({ x: 0, y: 0, vx: 0, vy: 0, size: 0, maxInitalSize: 0, alpha: 1, life: 0, maxLife: 0, active: false, type: 'smoke', idx: 0 }));
+                this.freeList = new Int32Array(maxSize);
+                for(let i=0; i<maxSize; i++) this.freeList[i] = i;
+                this.freeTop = maxSize - 1;
+            }
+            
+            spawn(x, y, vx, vy, type, maxLife = 60) {
+                if (this.freeTop < 0) return; 
+                const idx = this.freeList[this.freeTop--]; const p = this.pool[idx];
+                p.x = x; p.y = y; p.vx = vx; p.vy = vy; p.type = type; p.maxLife = maxLife; p.life = maxLife; p.alpha = 1; p.active = true; p.idx = idx;
+                
+                if (type === 'flame') p.size = Math.random() * 28 + 22; 
+                else if (type === 'toxic') p.size = Math.random() * 25 + 15; 
+                else if (type === 'spark') p.size = Math.random() * 2.5 + 0.8;
+                else if (type === 'blood') p.size = Math.random() * 18 + 8;
+                else p.size = Math.random() * 65 + 50; 
+                
+                p.maxInitalSize = p.size;
+            }
 
-    spawn(x,y,vx,vy,type,maxLife=60){
+            updateAndDrawBatched(ctx) {
+                for (let i = 0; i < this.pool.length; i++) {
+                    let p = this.pool[i]; if (!p.active) continue;
+                    
+                    p.x += p.vx; p.y += p.vy; p.life--;
+                    const lifeRatio = p.life / p.maxLife; p.alpha = lifeRatio;
+                    
+                    if (p.type === 'smoke') {
+                        p.vx *= 0.96; p.vy *= 0.97;
+                        p.x += Math.sin(p.life * 0.1) * 0.6; 
+                        p.size = p.maxInitalSize * (1 + (1 - lifeRatio) * 3.2); 
+                    } else if (p.type === 'blood') {
+                        p.vy += 0.4; p.vx *= 0.95;
+                        p.size = p.maxInitalSize * lifeRatio;
+                    } else if (p.type === 'flame' || p.type === 'toxic') {
+                        p.size = p.maxInitalSize * (lifeRatio * 1.2 + 0.1);
+                    }
+                    
+                    if (p.life <= 0) { 
+                        if (p.type === 'flame' && Math.random() > 0.3) {
+                            p.type = 'smoke'; p.life = p.maxLife = 50 + Math.random() * 30;
+                            p.vx *= 0.3; p.vy *= 0.4; p.maxInitalSize *= 1.8;
+                            continue;
+                        }
+                        p.active = false; 
+                        if (this.freeTop < this.freeList.length - 1) this.freeList[++this.freeTop] = p.idx; 
+                    }
+                }
+
+                ctx.save();
+                ctx.globalCompositeOperation = 'source-over';
+                for (let i = 0; i < this.pool.length; i++) {
+                    let p = this.pool[i]; 
+                    if (!p.active || (p.type !== 'smoke' && p.type !== 'blood')) continue;
+                    const rect = ParticleAtlas.rects[p.type];
+                    ctx.globalAlpha = p.type === 'smoke' ? p.alpha * 0.8 : p.alpha; 
+                    ctx.save(); ctx.translate(p.x, p.y);
+                    if (p.type === 'blood') {
+                        const speed = Math.sqrt(p.vx*p.vx + p.vy*p.vy);
+                        ctx.rotate(Math.atan2(p.vy, p.vx)); ctx.scale(1 + speed*0.1, 1);
+                    }
+                    ctx.drawImage(ParticleAtlas.canvas, rect.x, rect.y, rect.w, rect.h, -p.size/2, -p.size/2, p.size, p.size); ctx.restore();
+                }
+
+                ctx.globalCompositeOperation = 'screen';
+                for (let i = 0; i < this.pool.length; i++) {
+                    let p = this.pool[i]; 
+                    if (!p.active || (p.type !== 'flame' && p.type !== 'toxic' && p.type !== 'spark')) continue;
+                    ctx.globalAlpha = p.alpha;
+                    if (p.type === 'spark') {
+                        ctx.beginPath();
+                        const hue = 60 - (1 - p.alpha) * 60; const lit = 50 + p.alpha * 50;
+                        ctx.strokeStyle = `hsla(${hue}, 100%, ${lit}%, ${p.alpha})`; ctx.lineWidth = p.size;
+                        ctx.moveTo(p.x, p.y); ctx.lineTo(p.x - p.vx * 1.8, p.y - p.vy * 1.8); ctx.stroke(); continue;
+                    }
+                    const rect = ParticleAtlas.rects[p.type];
+                    ctx.save(); ctx.translate(p.x, p.y);
+                    if (p.type === 'flame') ctx.rotate(p.life * 0.08); 
+                    ctx.drawImage(ParticleAtlas.canvas, rect.x, rect.y, rect.w, rect.h, -p.size/2, -p.size/2, p.size, p.size); ctx.restore();
+                }
+                ctx.restore();
+            }
+        }
+        const particles = new BetterParticlePool(3500);
+
+        // ========================================================
+        // 核心突破：解剖学与逼真纹理重构引擎
+        // ========================================================
+        const BODY_WIDTH = 250; const BODY_HEIGHT = 450;
+        const offscreenBody = document.createElement('canvas'); const obCtx = offscreenBody.getContext('2d'); offscreenBody.width = BODY_WIDTH; offscreenBody.height = BODY_HEIGHT;
+        const offscreenSpecular = document.createElement('canvas'); const osCtx = offscreenSpecular.getContext('2d'); offscreenSpecular.width = BODY_WIDTH; offscreenSpecular.height = BODY_HEIGHT;
+
+        function drawBodyPath(context) {
+            context.beginPath(); context.arc(-35, 110, 42, 0, Math.PI * 2); context.arc(35, 110, 42, 0, Math.PI * 2);
+            context.moveTo(-38, 90); context.bezierCurveTo(-41, 30, -39, -40, -36, -95); context.lineTo(-52, -101);
+            context.bezierCurveTo(-54, -135, -26, -168, 0, -168); context.bezierCurveTo(26, -168, 54, -135, 52, -101);
+            context.lineTo(36, -95); context.bezierCurveTo(39, -40, 41, 30, 38, 90); context.closePath();
+        }
+
+        // 绘制更具蜿蜒感的毛细血管
+        function drawVein(ctx, startX, startY, controlPoints, width, color, blur) {
+            ctx.beginPath(); ctx.moveTo(startX, startY); ctx.lineWidth = width; ctx.strokeStyle = color; ctx.shadowColor = color; ctx.shadowBlur = blur; ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+            for (let i = 0; i < controlPoints.length; i += 3) { if (controlPoints[i+2]) ctx.bezierCurveTo(controlPoints[i].x, controlPoints[i].y, controlPoints[i+1].x, controlPoints[i+1].y, controlPoints[i+2].x, controlPoints[i+2].y); } ctx.stroke(); ctx.shadowBlur = 0; 
+        }
+
+        function preRenderOrganicAssets() {
+            obCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); obCtx.save(); obCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2);
+            
+            // 构建高级细胞级肉体斑纹 (Cellular Mottling) 替代单纯白噪
+            const noiseCanvas = document.createElement('canvas'); noiseCanvas.width = 128; noiseCanvas.height = 128; const nCtx = noiseCanvas.getContext('2d'); 
+            const imgData = nCtx.createImageData(128, 128);
+            for(let i=0; i<imgData.data.length; i+=4) { 
+                const val = Math.random() * 255; 
+                // 添加低频暗色斑块模拟血管透色
+                const r = val * 0.95; const g = val * 0.5; const b = val * 0.4 + (Math.random()*40);
+                imgData.data[i] = r; imgData.data[i+1] = g; imgData.data[i+2] = b; imgData.data[i+3] = 12 + Math.random() * 15; 
+            }
+            nCtx.putImageData(imgData, 0, 0); const skinPattern = obCtx.createPattern(noiseCanvas, 'repeat');
+            
+            // 基础肉体底色与阴影 (深化 SSS 次表面漫反射质感)
+            let testicleGrad = obCtx.createRadialGradient(-35, 105, 5, -35, 110, 45); testicleGrad.addColorStop(0, '#f2b5a1'); testicleGrad.addColorStop(0.5, '#ab6557'); testicleGrad.addColorStop(1, '#2c1010'); obCtx.fillStyle = testicleGrad; obCtx.beginPath(); obCtx.arc(-35, 110, 42, 0, Math.PI * 2); obCtx.fill();
+            let testicleGradR = obCtx.createRadialGradient(35, 105, 5, 35, 110, 45); testicleGradR.addColorStop(0, '#f2b5a1'); testicleGradR.addColorStop(0.5, '#ab6557'); testicleGradR.addColorStop(1, '#2c1010'); obCtx.fillStyle = testicleGradR; obCtx.beginPath(); obCtx.arc(35, 110, 42, 0, Math.PI * 2); obCtx.fill();
+            
+            let shaftGrad = obCtx.createLinearGradient(-45, 0, 45, 0); 
+            shaftGrad.addColorStop(0, '#2e1310'); // 极深侧边阴影
+            shaftGrad.addColorStop(0.2, '#c47d6a'); 
+            shaftGrad.addColorStop(0.5, '#f5c6b8'); // 中轴透亮
+            shaftGrad.addColorStop(0.8, '#c47d6a'); 
+            shaftGrad.addColorStop(1, '#2e1310'); 
+            obCtx.fillStyle = shaftGrad; obCtx.beginPath(); obCtx.moveTo(-38, 90); obCtx.bezierCurveTo(-41, 30, -39, -40, -36, -95); obCtx.lineTo(36, -95); obCtx.bezierCurveTo(39, -40, 41, 30, 38, 90); obCtx.fill();
+            
+            // 增强的冠部与顶端色彩 (Glans)
+            let glansGrad = obCtx.createRadialGradient(0, -135, 2, 0, -115, 65); 
+            glansGrad.addColorStop(0, '#ffa8a8');   // 娇嫩红润核心
+            glansGrad.addColorStop(0.3, '#d14343'); 
+            glansGrad.addColorStop(0.65, '#6b1322');// 紫红充血过渡带
+            glansGrad.addColorStop(0.9, '#30080f'); // 冠状沟极深阴影
+            glansGrad.addColorStop(1, '#1a0205');
+            obCtx.fillStyle = glansGrad; obCtx.beginPath(); obCtx.moveTo(-36, -95); obCtx.lineTo(-52, -101); obCtx.bezierCurveTo(-54, -135, -26, -168, 0, -168); obCtx.bezierCurveTo(26, -168, 54, -135, 52, -101); obCtx.lineTo(36, -95); obCtx.bezierCurveTo(20, -88, -20, -88, -36, -95); obCtx.fill();
+            
+            // 冠状缘 3D 立体边缘修饰
+            obCtx.strokeStyle = 'rgba(255, 160, 160, 0.5)'; obCtx.lineWidth = 3; obCtx.beginPath(); obCtx.moveTo(-50, -102); obCtx.bezierCurveTo(-20, -90, 20, -90, 50, -102); obCtx.stroke();
+            obCtx.strokeStyle = 'rgba(60, 10, 15, 0.7)'; obCtx.lineWidth = 2; obCtx.beginPath(); obCtx.moveTo(-48, -99); obCtx.bezierCurveTo(-20, -86, 20, -86, 48, -99); obCtx.stroke(); // 底部闭塞阴影
+
+            // ========================================================
+            // [新增] 核心逼真构造：尿道外口 (Urethral Meatus) 的深度雕刻
+            // ========================================================
+            // 1. 腔体深邃暗部 (Tear-drop Void)
+            obCtx.beginPath();
+            obCtx.moveTo(0, -168); // 顶端顶点
+            obCtx.bezierCurveTo(5, -162, 4, -148, 0, -144); // 右侧裂隙壁
+            obCtx.bezierCurveTo(-4, -148, -5, -162, 0, -168); // 左侧裂隙壁
+            obCtx.fillStyle = '#170305'; // 极深的血黑色
+            obCtx.fill();
+            
+            // 2. 内部粘膜组织的隐约血色过渡
+            obCtx.beginPath();
+            obCtx.moveTo(0, -166);
+            obCtx.bezierCurveTo(2, -160, 2, -150, 0, -145);
+            obCtx.bezierCurveTo(-2, -150, -2, -160, 0, -166);
+            obCtx.fillStyle = '#591118';
+            obCtx.fill();
+
+            // 3. 两侧肉唇的高光反射 (Mucosal Specular Rim)
+            obCtx.beginPath();
+            obCtx.moveTo(-1.5, -165); obCtx.bezierCurveTo(-4, -155, -2, -145, 0, -144);
+            obCtx.lineWidth = 1.2; obCtx.strokeStyle = 'rgba(255, 200, 210, 0.8)'; obCtx.stroke();
+            obCtx.beginPath();
+            obCtx.moveTo(1.5, -165); obCtx.bezierCurveTo(4, -155, 2, -145, 0, -144);
+            obCtx.lineWidth = 0.8; obCtx.strokeStyle = 'rgba(255, 150, 160, 0.5)'; obCtx.stroke(); // 右侧受光较弱
+
+            // ========================================================
+            // 复杂精细的皮下静脉与毛细血管分型 (Venous Networking)
+            // ========================================================
+            obCtx.save(); obCtx.globalCompositeOperation = 'source-atop'; 
+            
+            // 深层静脉 (粗大，偏紫蓝)
+            obCtx.globalAlpha = 0.35;
+            drawVein(obCtx, -8, 120, [{x:-18, y:80}, {x:-22, y:20}, {x:-8, y:-40}, {x:5, y:-80}, {x:2, y:-115}, {x:-8, y:-135}], 7, '#1f2042', 15);
+            drawVein(obCtx, 12, 115, [{x:22, y:60}, {x:8, y:0}, {x:28, y:-50}, {x:15, y:-95}, {x:18, y:-120}, {x:5, y:-132}], 6, '#1a1430', 12);
+            
+            // 表层动脉/静脉分支 (偏血红，细密)
+            obCtx.globalAlpha = 0.6; 
+            drawVein(obCtx, 0, 110, [{x:-3, y:70}, {x:-15, y:10}, {x:2, y:-30}, {x:10, y:-60}, {x:-2, y:-105}, {x:-10, y:-145}], 2.5, '#420b12', 3); 
+            // 额外毛细血管网
+            drawVein(obCtx, -15, 10, [{x:-20, y:-10}, {x:-28, y:-30}, {x:-32, y:-60}, {x:-25, y:-80}], 1.5, '#381015', 2);
+            drawVein(obCtx, 10, -60, [{x:18, y:-70}, {x:25, y:-90}, {x:30, y:-100}], 1.2, '#381015', 2);
+            obCtx.restore(); 
+
+            // 叠加高级肉质斑纹
+            obCtx.save(); obCtx.globalCompositeOperation = 'source-atop'; obCtx.fillStyle = skinPattern; obCtx.fillRect(-BODY_WIDTH / 2, -BODY_HEIGHT / 2, BODY_WIDTH, BODY_HEIGHT); obCtx.restore(); obCtx.restore();
+
+            // ========================================================
+            // 极致光照映射 (Volumetric Specular Map)
+            // ========================================================
+            osCtx.clearRect(0, 0, BODY_WIDTH, BODY_HEIGHT); osCtx.save(); osCtx.translate(BODY_WIDTH / 2, BODY_HEIGHT / 2); osCtx.fillStyle = '#000'; drawBodyPath(osCtx); osCtx.fill(); osCtx.globalCompositeOperation = 'source-in'; osCtx.clearRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+            
+            // 尾焰底光
+            let specTesticleL = osCtx.createRadialGradient(-30, 135, 0, -35, 120, 45); specTesticleL.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); specTesticleL.addColorStop(0.2, 'rgba(255, 180, 100, 0.6)'); specTesticleL.addColorStop(1, 'rgba(0, 0, 0, 0)'); osCtx.fillStyle = specTesticleL; osCtx.fillRect(-100, 80, 100, 100);
+            let specTesticleR = osCtx.createRadialGradient(30, 135, 0, 35, 120, 45); specTesticleR.addColorStop(0, 'rgba(255, 255, 255, 0.9)'); specTesticleR.addColorStop(0.2, 'rgba(255, 180, 100, 0.6)'); specTesticleR.addColorStop(1, 'rgba(0, 0, 0, 0)'); osCtx.fillStyle = specTesticleR; osCtx.fillRect(0, 80, 100, 100);
+            
+            // 冠部与躯干强烈湿润反光 (类 Octane SSS 质感)
+            let specGlans = osCtx.createRadialGradient(-8, -150, 1, 0, -135, 45); 
+            specGlans.addColorStop(0, 'rgba(255, 255, 255, 0.95)'); 
+            specGlans.addColorStop(0.2, 'rgba(255, 200, 200, 0.5)'); 
+            specGlans.addColorStop(1, 'rgba(0, 0, 0, 0)'); 
+            osCtx.fillStyle = specGlans; osCtx.fillRect(-60, -180, 120, 90);
+
+            // 尿道口周围的微弱湿润反光
+            let specMeatus = osCtx.createRadialGradient(0, -168, 0, 0, -165, 15);
+            specMeatus.addColorStop(0, 'rgba(255, 255, 255, 0.8)'); specMeatus.addColorStop(1, 'rgba(0,0,0,0)');
+            osCtx.fillStyle = specMeatus; osCtx.fillRect(-20, -180, 40, 40);
+            
+            let specShaft = osCtx.createLinearGradient(-35, 0, 35, 0); 
+            specShaft.addColorStop(0, 'rgba(0,0,0,0)'); 
+            specShaft.addColorStop(0.3, 'rgba(255, 255, 255, 0.15)'); 
+            specShaft.addColorStop(0.55, 'rgba(255, 255, 255, 0.85)'); // 中轴极细高光
+            specShaft.addColorStop(0.8, 'rgba(255, 200, 150, 0.25)'); 
+            specShaft.addColorStop(1, 'rgba(0,0,0,0)'); 
+            osCtx.fillStyle = specShaft; osCtx.fillRect(-50, -95, 100, 190); osCtx.restore();
+        }
+        preRenderOrganicAssets();
+
+        const entity = { 
+            x: window.innerWidth / 2, y: window.innerHeight - 250, 
+            vx: 0, vy: -3, angle: 0, baseSpeed: 2.4, gForce: 1.0, bloodPressure: 0, heartRate: 0,
+            noiseOffset: Math.random() * 1000, panicTimer: 0, targetVx: 0, targetVy: -3, 
+            scaleX: 1, scaleY: 1, skewX: 0, skewVelocity: 0, squashX: 1, squashY: 1, lexicalLevel: 0,
+            state: 'NORMAL', energy: 100, reigniteTimer: 0, climbSpeed: 0
+        };
+        let cameraShakeX = 0, cameraShakeY = 0, trauma = 0;
+
+        function updatePhysics() {
+            entity.panicTimer--;
+            let threatLevel = 0; let angleToThreat = 0;
+            const pad = 140; 
+            
+            entity.heartRate = 0.004 + (entity.gForce * 0.0015);
+            const pulse = Math.pow(Math.abs(Math.sin(Date.now() * entity.heartRate)), 6);
+
+            if (entity.state === 'NORMAL') {
+                let baseDrain = 0.18; 
+                if (pointer.active) {
+                    const dx = pointer.x - entity.x; const dy = pointer.y - entity.y;
+                    const dist = Math.sqrt(dx * dx + dy * dy);
+                    if (dist < 400) {
+                        threatLevel = 1 - (dist / 400); angleToThreat = Math.atan2(dy, dx); entity.panicTimer = 8;
+                        entity.targetVx = -Math.cos(angleToThreat) * (30 + threatLevel * 45); 
+                        entity.targetVy = -Math.sin(angleToThreat) * (25 + threatLevel * 35);
+                        entity.gForce = 9.5 + threatLevel * 8.5;
+                        baseDrain += threatLevel * 0.8;
+                    }
+                }
+                entity.energy -= baseDrain;
+
+                if (entity.energy <= 0) {
+                    entity.energy = 0; entity.state = 'FLAMEOUT';
+                    entity.targetVx = 0; entity.targetVy = 25; entity.panicTimer = 0;
+                    trauma = 1.0; 
+                } else {
+                    if (entity.panicTimer <= 0 && threatLevel === 0) {
+                        if (Math.random() > 0.65) {
+                            entity.targetVx = (Math.random() - 0.5) * 40; entity.targetVy = -Math.random() * 15 - 5;
+                            entity.panicTimer = Math.floor(Math.random() * 12) + 5; entity.gForce = 6.0 + Math.random() * 4.0;
+                        } else {
+                            entity.targetVx = Math.sin(Date.now() * 0.002 + entity.noiseOffset) * 6; entity.targetVy = -1.5;
+                            entity.panicTimer = Math.floor(Math.random() * 35) + 20; entity.gForce = 1.2 + Math.random() * 1.5;
+                        }
+                    }
+                    const lerpFactor = entity.gForce > 8 ? 0.35 : 0.08;
+                    entity.vx = entity.vx * (1 - lerpFactor) + entity.targetVx * lerpFactor;
+                    entity.vy = entity.vy * (1 - lerpFactor) + entity.targetVy * lerpFactor;
+                }
+            } 
+            
+            if (entity.state === 'FLAMEOUT') {
+                entity.targetVx = Math.sin(Date.now() * 0.08) * 3.5; 
+                entity.vx = entity.vx * 0.96 + entity.targetVx * 0.04;
+                entity.vy = entity.vy * 0.88 + entity.targetVy * 0.12; 
+                entity.gForce = 1.0 + Math.abs(entity.vy) * 0.35;
+
+                if (entity.y >= height - pad) {
+                    entity.y = height - pad; entity.vx = 0; entity.vy = 0;
+                    entity.targetVy = 0; entity.state = 'REIGNITING';
+                    entity.reigniteTimer = 100 + Math.random() * 50; 
+                    entity.skewVelocity = (Math.random() - 0.5) * 2.2; 
+                    trauma = 0.8;
+                }
+            } else if (entity.state === 'REIGNITING') {
+                entity.vx = Math.sin(Date.now() * 0.25) * (entity.reigniteTimer > 30 ? 1.5 : 5); 
+                entity.vy = 0; entity.gForce = 0.5 + Math.random() * 3;
+                entity.reigniteTimer--;
+
+                if (entity.reigniteTimer <= 0) {
+                    entity.state = 'CLIMBING'; entity.climbSpeed = -2; 
+                    entity.skewVelocity = (Math.random() - 0.5) * 1.8;
+                    trauma = 1.0;
+                }
+            } else if (entity.state === 'CLIMBING') {
+                entity.climbSpeed = Math.max(-35, entity.climbSpeed - 0.8); 
+                entity.vy = entity.climbSpeed;
+                entity.vx = Math.sin(Date.now() * 0.05) * 8; 
+                entity.gForce = Math.abs(entity.vy) * 0.65;
+
+                if (entity.y <= height * 0.3) {
+                    entity.state = 'NORMAL'; entity.energy = 100;
+                    entity.vy *= 0.25; 
+                    entity.gForce = 1.0; 
+                }
+            }
+
+            let squishForceX = 0, squishForceY = 0;
+            const springK = 0.15; const dampC = 0.85;
+
+            if (entity.state !== 'REIGNITING') {
+                if (entity.x < pad) { squishForceX = (pad - entity.x) * springK; entity.vx += squishForceX; entity.x += squishForceX; }
+                else if (entity.x > width - pad) { squishForceX = (width - pad - entity.x) * springK; entity.vx += squishForceX; entity.x += squishForceX; }
+                
+                if (entity.y < pad && entity.state !== 'CLIMBING') { squishForceY = (pad - entity.y) * springK; entity.vy += squishForceY; entity.y += squishForceY; }
+                else if (entity.y > height - pad && entity.state !== 'FLAMEOUT') { squishForceY = (height - pad - entity.y) * springK; entity.vy += squishForceY; entity.y += squishForceY; }
+                
+                entity.squashX = 1 - Math.abs(squishForceY) * 0.015 + Math.abs(squishForceX) * 0.01;
+                entity.squashY = 1 - Math.abs(squishForceX) * 0.015 + Math.abs(squishForceY) * 0.01;
+                entity.vx *= dampC; entity.vy *= dampC;
+                
+                if ((Math.abs(squishForceX) > 5 || Math.abs(squishForceY) > 5) && entity.state === 'NORMAL') {
+                    entity.gForce += 3.5; entity.panicTimer = 10; trauma += 0.2;
+                    if(Math.random() > 0.5) {
+                        const bAngle = Math.atan2(entity.vy, entity.vx) + Math.PI + (Math.random()-0.5);
+                        for(let b=0; b<8; b++) particles.spawn(entity.x, entity.y+50, Math.cos(bAngle)* (10+Math.random()*15), Math.sin(bAngle)*(10+Math.random()*15), 'blood', 40);
+                    }
+                }
+            } else {
+                entity.squashX = 1; entity.squashY = 1;
+            }
+
+            entity.x += entity.vx; entity.y += entity.vy;
+
+            let targetSkew = entity.vx * 0.016;
+            if (entity.state === 'FLAMEOUT') targetSkew = entity.vx * 0.09; 
+            if (entity.state === 'CLIMBING') targetSkew += Math.sin(Date.now() * 0.12) * 0.25; 
+
+            let stiffness = entity.state === 'FLAMEOUT' ? 0.06 : 0.16; 
+            let damping = entity.state === 'FLAMEOUT' ? 0.85 : 0.72;
+            
+            let force = (targetSkew - entity.skewX) * stiffness;
+            entity.skewVelocity += force; entity.skewVelocity *= damping; entity.skewX += entity.skewVelocity;
+            entity.skewX = Math.max(-1.5, Math.min(1.5, entity.skewX));
+            
+            entity.angle = entity.skewX;
+
+            if (entity.state === 'NORMAL' || entity.state === 'CLIMBING') {
+                entity.bloodPressure = Math.min(1, entity.gForce / 14) + (pulse * 0.5);
+                entity.scaleX = entity.squashX * (1 + (pulse * 0.1 * (1 + entity.gForce * 0.2)));
+                entity.scaleY = entity.squashY * (1 - (pulse * 0.05 * (1 + entity.gForce * 0.2)));
+            } else if (entity.state === 'FLAMEOUT') {
+                entity.bloodPressure *= 0.90; 
+                entity.scaleX = entity.squashX * (0.9 + Math.sin(Date.now() * 0.015) * 0.03); 
+                entity.scaleY = entity.squashY * 1.1;
+            } else if (entity.state === 'REIGNITING') {
+                const spasm = Math.random() > 0.85 ? 0.7 : 0; 
+                entity.bloodPressure = spasm;
+                entity.scaleX = 1.4 + (Math.sin(Date.now() * 0.15) * 0.08); 
+                entity.scaleY = 0.6;
+            }
+
+            const cosA = Math.cos(entity.angle), sinA = Math.sin(entity.angle);
+            const engineX1 = entity.x + (-35 * cosA - 120 * sinA), engineY1 = entity.y + (-35 * sinA + 120 * cosA);
+            const engineX2 = entity.x + (35 * cosA - 120 * sinA), engineY2 = entity.y + (35 * sinA + 120 * cosA);
+            const parasiteX = entity.x + (0 * cosA - 110 * sinA), parasiteY = entity.y + (0 * sinA + 110 * cosA);
+
+            if (entity.state === 'NORMAL') {
+                const isOverload = entity.gForce > 7.5;
+                for (let i = 0; i < (isOverload ? 5 : 2); i++) {
+                    particles.spawn(engineX1 + (Math.random()-0.5)*18, engineY1, (Math.random()-0.5)*4 - sinA*6, Math.random()*8+8 + cosA*4, 'flame', 35);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*18, engineY2, (Math.random()-0.5)*4 - sinA*6, Math.random()*8+8 + cosA*4, 'flame', 35);
+                }
+                if (Math.random() > (isOverload ? 0.15 : 0.8)) {
+                    particles.spawn(engineX1 + (Math.random()-0.5)*12, engineY1 + 10, (Math.random()-0.5)*20 - sinA*10, Math.random()*18+15 + cosA*8, 'spark', 18);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*12, engineY2 + 10, (Math.random()-0.5)*20 - sinA*10, Math.random()*18+15 + cosA*8, 'spark', 18);
+                }
+                if (Math.random() > 0.85) {
+                    particles.spawn(engineX1, engineY1 + 15, (Math.random()-0.5)*5 - sinA*3, Math.random()*4+4 + cosA*3, 'smoke', 50);
+                    particles.spawn(engineX2, engineY2 + 15, (Math.random()-0.5)*5 - sinA*3, Math.random()*4+4 + cosA*3, 'smoke', 50);
+                }
+                if (entity.gForce > 6.0) {
+                    let sprayAngle = -Math.PI/2 - entity.angle; if (threatLevel > 0) sprayAngle = angleToThreat; 
+                    for(let j=0; j<5; j++) particles.spawn(parasiteX, parasiteY, Math.cos(sprayAngle + (Math.random()-0.5)) * (10 + Math.random()*8), Math.sin(sprayAngle + (Math.random()-0.5)) * (10 + Math.random()*8), 'toxic', 40);
+                }
+            } else if (entity.state === 'FLAMEOUT') {
+                if (Math.random() > 0.3) { 
+                    particles.spawn(engineX1, engineY1, (Math.random()-0.5)*4, -entity.vy*0.15 + Math.random()*4, 'smoke', 80);
+                    particles.spawn(engineX2, engineY2, (Math.random()-0.5)*4, -entity.vy*0.15 + Math.random()*4, 'smoke', 80);
+                }
+            } else if (entity.state === 'REIGNITING') {
+                if (Math.random() > 0.65) {
+                    trauma += 0.1;
+                    particles.spawn(engineX1 + (Math.random()-0.5)*25, engineY1, (Math.random()-0.5)*10, Math.random()*5-2, 'flame', 18);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*25, engineY2, (Math.random()-0.5)*10, Math.random()*5-2, 'flame', 18);
+                    particles.spawn(parasiteX, parasiteY, (Math.random()-0.5)*15, -Math.random()*10, 'toxic', 35);
+                }
+                if (Math.random() > 0.2) {
+                    particles.spawn(entity.x + (Math.random()-0.5)*70, entity.y + 120, (Math.random()-0.5)*6, -Math.random()*5, 'smoke', 70);
+                }
+            } else if (entity.state === 'CLIMBING') {
+                for (let i = 0; i < 12; i++) {
+                    particles.spawn(engineX1 + (Math.random()-0.5)*30, engineY1 + i*3, (Math.random()-0.5)*10 - sinA*5, Math.random()*18+25, 'flame', 50);
+                    particles.spawn(engineX2 + (Math.random()-0.5)*30, engineY2 + i*3, (Math.random()-0.5)*10 - sinA*5, Math.random()*18+25, 'flame', 50);
+                    if (i % 2 === 0) {
+                        particles.spawn(engineX1 + (Math.random()-0.5)*25, engineY1, (Math.random()-0.5)*22 - sinA*12, Math.random()*30+20 + cosA*12, 'spark', 25);
+                        particles.spawn(engineX2 + (Math.random()-0.5)*25, engineY2, (Math.random()-0.5)*22 - sinA*12, Math.random()*30+20 + cosA*12, 'spark', 25);
+                    }
+                }
+                for(let k=0; k<3; k++) {
+                    particles.spawn(engineX1, engineY1 + 20, (Math.random()-0.5)*18, Math.random()*15+10, 'smoke', 90);
+                    particles.spawn(engineX2, engineY2 + 20, (Math.random()-0.5)*18, Math.random()*15+10, 'smoke', 90);
+                }
+                trauma += 0.05; 
+            }
+
+            trauma = Math.max(0, trauma - 0.03); 
+            if (entity.state === 'CLIMBING') trauma = Math.max(trauma, 0.6);
+            if (entity.gForce > 8) trauma = Math.max(trauma, (entity.gForce - 8) * 0.08);
+            
+            const shake = trauma * trauma; 
+            cameraShakeX = (Math.random() - 0.5) * 45 * shake;
+            cameraShakeY = (Math.random() - 0.5) * 45 * shake;
+
+            if (entity.state === 'FLAMEOUT') entity.lexicalLevel = 1;
+            else if (entity.state === 'REIGNITING') entity.lexicalLevel = 3;
+            else if (entity.state === 'CLIMBING') entity.lexicalLevel = 2;
+            else entity.lexicalLevel = entity.gForce < 5 ? 0 : (entity.gForce < 9 ? 1 : 2);
+        }
+
+        function updateHUD() {
+            const lvl = entity.lexicalLevel; const state = entity.state; const hudElem = document.getElementById('hud');
+            
+            if (state === 'FLAMEOUT' || state === 'REIGNITING') { hudElem.style.color = '#ff1133'; hudElem.style.textShadow = '0 0 15px #ff0000'; hudElem.classList.add('glitch'); } 
+            else if (state === 'CLIMBING') { hudElem.style.color = '#ff8800'; hudElem.style.textShadow = '0 0 18px #ff4400'; hudElem.classList.add('glitch'); }
+            else { hudElem.style.color = '#44ff66'; hudElem.style.textShadow = '0 0 6px rgba(0, 255, 100, 0.4)'; hudElem.classList.remove('glitch'); }
+            
+            document.getElementById('fps').innerText = state !== 'NORMAL' ? `NEURAL_SYNC: ${currentFps} ERR_STBL` : `NEURAL_SYNC: ${currentFps} HZ`;
+            
+            const stateTexts = lexicons.status[state];
+            document.getElementById('status').innerText = stateTexts[Math.floor(Date.now()/500) % stateTexts.length];
+            document.getElementById('energyGauge').innerText = `FLESH_RESERVE: ${Math.max(0, entity.energy).toFixed(1)}%`;
+            document.getElementById('velocity').innerText = `${lexicons.speed[lvl]}: ${(entity.baseSpeed + Math.abs(entity.vx)*0.15 + Math.abs(entity.vy)*0.25).toFixed(2)}`;
+            document.getElementById('gforce').innerText = `${lexicons.gforce[lvl]}: ${entity.gForce.toFixed(2)}`;
+            
+            const warnElem = document.getElementById('bp'); 
+            if (state === 'FLAMEOUT') { warnElem.style.display = 'block'; warnElem.innerText = "CRITICAL: THOUGHT_CRIME_DETECTED"; }
+            else if (state === 'REIGNITING') { warnElem.style.display = 'block'; warnElem.innerText = "FATAL: IGNORANCE_PUMP_FAILURE"; }
+            else if (state === 'CLIMBING') { warnElem.style.display = 'block'; warnElem.innerText = "OVERLOAD: REALITY_INCINERATION"; }
+            else { warnElem.style.display = entity.gForce > 8 ? 'block' : 'none'; warnElem.innerText = "WARNING: LINGUISTIC CORRUPTION DETECTED"; }
+        }
+
+        function drawLoop(timestamp) {
+            frames++; if (timestamp - lastTime >= 100) { if (timestamp - lastTime >= 1000) { currentFps = frames * 10; frames = 0; lastTime = timestamp; } updateHUD(); }
+            updatePhysics();
+
+            ctx.globalCompositeOperation = 'source-over';
+            let bgAlpha = 0.35; let bgRed = 1, bgGreen = 1, bgBlue = 2;
+            if (entity.state === 'CLIMBING') { bgAlpha = 0.15; bgRed = 15; bgGreen = 5; bgBlue = 0; } 
+            else if (entity.state === 'REIGNITING') { bgAlpha = 0.5; bgRed = 10; bgGreen = 0; bgBlue = 0; }
+            else if (entity.state === 'FLAMEOUT') { bgAlpha = 0.2; bgRed = 0; bgGreen = 0; bgBlue = 0; }
+            else if (entity.gForce > 8) { bgAlpha = 0.25; bgRed = 5 + (entity.gForce-8); bgGreen = 0; bgBlue = 2; }
+            
+            ctx.fillStyle = `rgba(${bgRed}, ${bgGreen}, ${bgBlue}, ${bgAlpha})`; 
+            ctx.fillRect(0, 0, width, height);
+
+            ctx.save(); 
+            ctx.translate(cameraShakeX, cameraShakeY);
+            
+            particles.updateAndDrawBatched(ctx);
+
+            ctx.save(); 
+            ctx.translate(entity.x, entity.y); 
+            ctx.rotate(entity.angle); 
+            ctx.scale(entity.scaleX, entity.scaleY); 
+            ctx.transform(1, entity.skewX, 0, 1, 0, 0); 
+
+            ctx.globalCompositeOperation = 'source-over';
+            ctx.drawImage(offscreenBody, -BODY_WIDTH / 2, -BODY_HEIGHT / 2);
+
+            if (entity.bloodPressure > 0.02) {
+                ctx.save(); ctx.globalCompositeOperation = 'source-atop'; 
+                let bpGrad = ctx.createRadialGradient(0, 0, 10, 0, 0, 170); 
+                let red = entity.state === 'CLIMBING' ? 255 : 230;
+                bpGrad.addColorStop(0, `rgba(${red}, 10, 20, ${entity.bloodPressure})`); 
+                bpGrad.addColorStop(1, 'rgba(50, 0, 0, 0)');
+                ctx.fillStyle = bpGrad; ctx.fillRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+                ctx.globalCompositeOperation = 'color-dodge'; ctx.fillRect(-BODY_WIDTH/2, -BODY_HEIGHT/2, BODY_WIDTH, BODY_HEIGHT);
+                ctx.restore();
+            }
+
+            ctx.save(); ctx.globalCompositeOperation = 'screen'; 
+            ctx.globalAlpha = entity.state === 'FLAMEOUT' ? 0.15 : (0.5 + Math.random() * 0.4);
+            ctx.drawImage(offscreenSpecular, -BODY_WIDTH / 2, -BODY_HEIGHT / 2); ctx.restore();
+
+            ctx.save();
+            let mouthPulse = 0;
+            if (entity.state === 'NORMAL' || entity.state === 'CLIMBING') {
+                mouthPulse = Math.sin(Date.now() * entity.heartRate * 2) * (5 + entity.bloodPressure * 8);
+            } else if (entity.state === 'REIGNITING') {
+                mouthPulse = Math.random() > 0.85 ? 12 : -4; 
+            }
+            ctx.translate(0, 110);
+            
+            ctx.fillStyle = entity.state === 'FLAMEOUT' ? '#0a0508' : '#1f0810'; ctx.beginPath(); 
+            ctx.ellipse(0, 0, Math.max(0.1, 26 + mouthPulse*0.6), Math.max(0.1, 15 - mouthPulse), 0, 0, Math.PI * 2); 
+            ctx.fill();
+            
+            ctx.fillStyle = '#050002'; ctx.beginPath(); 
+            ctx.ellipse(0, 0, Math.max(0.1, 15 + mouthPulse * 0.4), Math.max(0.1, 9 - mouthPulse * 0.7), 0, 0, Math.PI * 2); 
+            ctx.fill();
+            
+            ctx.strokeStyle = entity.state === 'CLIMBING' ? '#ffcc00' : (entity.state === 'FLAMEOUT' ? '#22080f' : '#ff1144'); 
+            ctx.lineWidth = 2.5 + entity.bloodPressure * 5; ctx.stroke();
+            ctx.restore();
+            
+            ctx.restore(); ctx.restore(); requestAnimationFrame(drawLoop);
+        }
+        requestAnimationFrame(drawLoop);
+    </script>
+</body>
+</html>    spawn(x,y,vx,vy,type,maxLife=60){
         if(this.freeList.length===0) return;
 
         const idx=this.freeList.pop();
